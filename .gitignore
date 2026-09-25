@@ -220,3 +220,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 .DS_Store
+
+# This project keeps its PyInstaller definition under version control
+!build.spec

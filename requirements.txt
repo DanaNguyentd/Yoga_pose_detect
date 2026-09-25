@@ -1,0 +1,8 @@
+# Runtime dependencies. Install with: pip install -r requirements.txt
+opencv-python>=4.8
+numpy>=1.24
+pywebview>=5.0
+
+# The tkinter interface (ui.py / controller.py) additionally uses Pillow.
+# tkinter itself ships with Python.
+Pillow>=9.0

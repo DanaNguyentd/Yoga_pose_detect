@@ -1,0 +1,62 @@
+# Builds a standalone application for macOS, Linux and Windows.
+#
+# PyInstaller cannot cross-compile, so each operating system is built on its
+# own runner. Start a build from the Actions tab, or push a tag like v0.1.0.
+# The finished applications appear as downloadable artifacts on the run.
+
+name: Build application
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            artifact: YogaPoseExtractor-macOS
+          - os: ubuntu-latest
+            label: Linux
+            artifact: YogaPoseExtractor-Linux
+          - os: windows-latest
+            label: Windows
+            artifact: YogaPoseExtractor-Windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # pywebview draws through the system web view. On Linux that is
+      # WebKit2GTK, which has to be present to build and to run.
+      - name: Install Linux web view libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgirepository1.0-dev libcairo2-dev \
+            gir1.2-webkit2-4.1 python3-gi python3-gi-cairo
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      - name: Build
+        run: pyinstaller --clean --noconfirm build.spec
+
+      - name: Upload the application
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          retention-days: 30

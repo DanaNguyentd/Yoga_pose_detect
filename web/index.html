@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yoga Pose — Frame Extractor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="titlebar">
+  <h1>Frame Extractor</h1>
+  <p class="subtitle">Pull frames from a video and strip the static background</p>
+</header>
+
+<main class="layout">
+
+  <section class="panel controls">
+
+    <fieldset class="group">
+      <legend>Source</legend>
+
+      <label class="field">
+        <span class="label">Video file</span>
+        <div class="row">
+          <input type="text" id="videoPath" placeholder="No file chosen" readonly>
+          <button type="button" class="btn ghost" id="chooseVideo">Choose…</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span class="label">Output folder</span>
+        <div class="row">
+          <input type="text" id="outputPath" placeholder="Created next to the video">
+          <button type="button" class="btn ghost" id="chooseOutput">Choose…</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span class="label">Filename prefix</span>
+        <input type="text" id="prefix" value="frame" class="short">
+      </label>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Background</legend>
+
+      <label class="switch">
+        <input type="checkbox" id="removeBg" checked>
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label">Remove the static background</span>
+      </label>
+
+      <div id="bgOptions">
+        <label class="field">
+          <span class="label">
+            Threshold
+            <output id="thresholdValue" class="value">25</output>
+          </span>
+          <input type="range" id="threshold" min="0" max="120" value="25">
+          <span class="hint">0 picks it automatically. Lower keeps more of the body.</span>
+        </label>
+
+        <label class="field">
+          <span class="label">
+            Background samples
+            <output id="samplesValue" class="value">60</output>
+          </span>
+          <input type="range" id="samples" min="10" max="200" step="5" value="60">
+          <span class="hint">Frames used to rebuild the empty scene.</span>
+        </label>
+
+        <label class="field">
+          <span class="label">Replace background with</span>
+          <div class="segmented" id="fill">
+            <button type="button" class="seg active" data-value="black">Black</button>
+            <button type="button" class="seg" data-value="white">White</button>
+            <button type="button" class="seg" data-value="alpha">Transparent</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="label">
+            Smallest blob kept
+            <output id="minAreaValue" class="value">0.5%</output>
+          </span>
+          <input type="range" id="minArea" min="0" max="5" step="0.1" value="0.5">
+          <span class="hint">Throws away specks of noise.</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="actions">
+      <button type="button" class="btn" id="previewBtn">Preview a frame</button>
+      <button type="button" class="btn primary" id="startBtn">Extract all frames</button>
+      <button type="button" class="btn danger" id="cancelBtn" hidden>Cancel</button>
+    </div>
+
+  </section>
+
+  <section class="panel results">
+
+    <div class="preview" id="preview">
+      <div class="placeholder" id="placeholder">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><circle cx="9" cy="10" r="2"/><path d="m5 18 5-5 3 3 3-3 3 4"/></svg>
+        <p>Preview a frame to judge the settings before extracting everything</p>
+      </div>
+      <figure id="previewFigure" hidden>
+        <img id="previewImage" alt="Original frame, rebuilt background, and the result">
+        <figcaption>original &middot; rebuilt background &middot; result</figcaption>
+      </figure>
+    </div>
+
+    <div class="status">
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="status-row">
+        <span id="status">Ready</span>
+        <span id="counter" class="counter"></span>
+      </div>
+    </div>
+
+    <div class="log" id="log" aria-live="polite"></div>
+
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
