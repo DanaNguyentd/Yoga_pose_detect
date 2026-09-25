@@ -16,7 +16,7 @@ import argparse
 from datetime import datetime
 
 
-def compute_background(video_path, sample_count=60):
+def compute_background(video_path, sample_count=60, log=None):
     """
     Build a static background image by taking the per-pixel median of frames
     sampled evenly across the video.
@@ -27,15 +27,17 @@ def compute_background(video_path, sample_count=60):
     Args:
         video_path (str): Path to the input video file
         sample_count (int): How many frames to sample (default: 60)
+        log (callable): Where messages go, defaults to print
 
     Returns:
         numpy.ndarray: Grayscale background image, or None on failure
     """
 
+    emit = log if log is not None else print
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
-        print(f"Error: Could not open video file {video_path}")
+        emit(f"Error: Could not open video file {video_path}")
         return None
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -60,10 +62,10 @@ def compute_background(video_path, sample_count=60):
     cap.release()
 
     if not samples:
-        print("Error: Could not read any frames to build the background")
+        emit("Error: Could not read any frames to build the background")
         return None
 
-    print(f"  Background built from {len(samples)} sampled frames")
+    emit(f"  Background built from {len(samples)} sampled frames")
     return np.median(np.stack(samples), axis=0).astype(np.uint8)
 
 
@@ -142,7 +144,8 @@ def apply_mask(gray_frame, mask, fill="black"):
 
 
 def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
-                   bg_threshold=25, bg_samples=60, bg_fill="black", min_area_pct=0.5):
+                   bg_threshold=25, bg_samples=60, bg_fill="black", min_area_pct=0.5,
+                   log=None, progress_callback=None, should_cancel=None):
     """
     Extract all frames from a video file and save them as images.
 
@@ -156,18 +159,23 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         bg_samples (int): Frames sampled to build the background
         bg_fill (str): "black", "white" or "alpha" for the removed background
         min_area_pct (float): Smallest kept blob, as a percentage of frame area
+        log (callable): Where messages go, defaults to print
+        progress_callback (callable): Called as (frames_done, frames_total)
+        should_cancel (callable): Polled each frame; extraction stops when True
 
     Returns:
         bool: True if successful, False otherwise
     """
 
+    emit = log if log is not None else print
+
     # Validate input file
     if not os.path.exists(video_path):
-        print(f"Error: Video file not found at {video_path}")
+        emit(f"Error: Video file not found at {video_path}")
         return False
 
     if not video_path.lower().endswith('.mov'):
-        print(f"Warning: File does not have .MOV extension. Proceeding anyway...")
+        emit(f"Warning: File does not have .MOV extension. Proceeding anyway...")
 
     # Create output directory
     if output_dir is None:
@@ -176,22 +184,22 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         output_dir = f"{video_name}_frames_{timestamp}"
 
     os.makedirs(output_dir, exist_ok=True)
-    print(f"Output directory: {output_dir}")
+    emit(f"Output directory: {output_dir}")
 
     # Build the static background first, before the extraction pass
     background = None
     if remove_bg:
-        print("Building static background...")
-        background = compute_background(video_path, bg_samples)
+        emit("Building static background...")
+        background = compute_background(video_path, bg_samples, log=emit)
         if background is None:
-            print("Error: Background removal requested but background failed")
+            emit("Error: Background removal requested but background failed")
             return False
 
     # Open video file
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
-        print(f"Error: Could not open video file {video_path}")
+        emit(f"Error: Could not open video file {video_path}")
         return False
 
     # Get video properties
@@ -200,11 +208,11 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    print(f"Video Properties:")
-    print(f"  Total frames: {total_frames}")
-    print(f"  FPS: {fps}")
-    print(f"  Resolution: {width}x{height}")
-    print(f"  Background removal: {'on' if remove_bg else 'off'}")
+    emit(f"Video Properties:")
+    emit(f"  Total frames: {total_frames}")
+    emit(f"  FPS: {fps}")
+    emit(f"  Resolution: {width}x{height}")
+    emit(f"  Background removal: {'on' if remove_bg else 'off'}")
 
     frame_count = 0
     successful_extractions = 0
@@ -216,6 +224,10 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
 
             if not ret:
                 break
+
+            if should_cancel is not None and should_cancel():
+                emit(f"\nCancelled after {frame_count} frames")
+                return False
 
             # Convert to grayscale if not already (for consistent handling of BW video)
             gray_frame = to_grayscale(frame)
@@ -239,25 +251,32 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
             if cv2.imwrite(output_path, output_frame):
                 successful_extractions += 1
             else:
-                print(f"Warning: Failed to save frame {frame_count}")
+                emit(f"Warning: Failed to save frame {frame_count}")
 
             frame_count += 1
 
             # Print progress every 100 frames
             if frame_count % 100 == 0:
-                print(f"  Processed {frame_count}/{total_frames} frames...")
+                emit(f"  Processed {frame_count}/{total_frames} frames...")
 
-        print(f"\nExtraction Complete!")
-        print(f"Total frames extracted: {successful_extractions}/{frame_count}")
+            # Report progress more often than that, for a UI progress bar
+            if progress_callback is not None and frame_count % 5 == 0:
+                progress_callback(frame_count, total_frames)
+
+        emit(f"\nExtraction Complete!")
+        emit(f"Total frames extracted: {successful_extractions}/{frame_count}")
         if remove_bg and empty_masks:
-            print(f"Frames where nothing was detected: {empty_masks} "
+            emit(f"Frames where nothing was detected: {empty_masks} "
                   f"(lower --bg-threshold if that seems wrong)")
-        print(f"Frames saved to: {output_dir}")
+        emit(f"Frames saved to: {output_dir}")
+
+        if progress_callback is not None:
+            progress_callback(frame_count, frame_count)
 
         return True
 
     except Exception as e:
-        print(f"Error during extraction: {e}")
+        emit(f"Error during extraction: {e}")
         return False
 
     finally:
