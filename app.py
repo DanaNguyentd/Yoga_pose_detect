@@ -3,7 +3,8 @@ Desktop application: an HTML interface over the Python frame extractor.
 
 Run it during development with:
 
-    python app.py
+    python app.py            normal run
+    python app.py --debug    adds developer tools for working on web/
 
 The window is the operating system's own web view, so nothing here bundles a
 browser. Everything the interface can ask for is a method on Api below: the
@@ -257,7 +258,14 @@ class Api:
 
 
 def main():
-    """Create the window and hand control to the web view."""
+    """
+    Create the window and hand control to the web view.
+
+    Passing --debug turns on the platform inspector, so the interface can be
+    reloaded and its styles poked at without restarting anything.
+    """
+
+    debug = "--debug" in sys.argv
 
     api = Api()
     window = webview.create_window(
@@ -269,7 +277,7 @@ def main():
         min_size=WINDOW_MIN_SIZE,
     )
     api.window = window
-    webview.start()
+    webview.start(debug=debug)
 
 
 if __name__ == "__main__":
