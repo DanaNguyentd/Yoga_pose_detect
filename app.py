@@ -209,8 +209,6 @@ class Api:
             succeeded = analysis.extract_frames(
                 settings["video_path"],
                 settings.get("output_dir") or None,
-                # The interface does not offer a prefix: every image is
-                # frame_<number>.png, named after its frame in the video
                 settings.get("prefix") or "frame",
                 remove_bg=bool(settings["remove_bg"]),
                 bg_threshold=int(settings["bg_threshold"]),
@@ -219,6 +217,7 @@ class Api:
                 min_area_pct=float(settings["min_area_pct"]),
                 frame_step=int(settings.get("frame_step") or 1),
                 interval_seconds=settings.get("interval_seconds") or None,
+                image_format=settings.get("image_format") or "png",
                 log=self._log,
                 progress_callback=lambda done, total: self._emit("progress", done, total),
                 should_cancel=self.cancel_requested.is_set,

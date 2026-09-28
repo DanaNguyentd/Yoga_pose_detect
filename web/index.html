@@ -36,6 +36,25 @@
         </div>
       </label>
 
+      <div class="two">
+        <label class="field">
+          <span class="label">Filename prefix</span>
+          <input type="text" id="prefix" value="frame">
+        </label>
+
+        <label class="field">
+          <span class="label">Image format</span>
+          <select id="format" class="select">
+            <option value="png" selected>PNG</option>
+            <option value="jpg">JPEG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="example" id="example">Saved as <code>frame_000001.png</code></p>
+      <p class="hint" id="formatHint">PNG is lossless and keeps transparency.</p>
+
       <p class="videoinfo" id="videoInfo" hidden></p>
     </fieldset>
 

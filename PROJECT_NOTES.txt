@@ -169,10 +169,11 @@ It was deleted once the HTML one replaced it; git history still has it.
             to_grayscale()              one channel, consistently
             build_foreground_mask()     see below
             apply_mask()                keep the person, replace the rest
-            cv2.imwrite()               <prefix>_<0-padded number>.png
+            cv2.imwrite()               <prefix>_<0-padded number><ext>
 
-        The interface does not offer a prefix, so images from the application
-        are always frame_<number>.png. The command line keeps --prefix.
+        The prefix defaults to "frame" and the extension comes from the chosen
+        image format, so the first file is usually frame_000000.png. The
+        interface shows the exact name under the controls as you type.
 
         build_foreground_mask() in detail:
             absdiff(frame, background)  how far each pixel moved from empty
@@ -202,6 +203,16 @@ It was deleted once the HTML one replaced it; git history still has it.
         One channel out, whatever came in. Shared so that the sampling pass
         and the extraction pass can never disagree.
 
+    resolve_image_format(image_format="png", fill="black", log=None)
+        Returns the file extension and the cv2.imwrite parameters for one of
+        three formats:
+            png     lossless, keeps transparency, largest files
+            jpg     much smaller, lossy, NO transparency, quality 95
+            webp    small like jpg, still keeps transparency, quality 95
+        An unknown name falls back to PNG with a warning. So does asking for a
+        transparent background as JPEG, because the format has no alpha
+        channel and the transparency would be silently lost otherwise.
+
     resolve_frame_step(fps, frame_step=1, interval_seconds=None, log=None)
         Turns a wish ("one frame per second") into a number of frames to skip,
         using the video's frame rate. Returns at least 1. Falls back to every
@@ -225,7 +236,7 @@ It was deleted once the HTML one replaced it; git history still has it.
     extract_frames(video_path, output_dir=None, prefix="frame",
                    remove_bg=True, bg_threshold=25, bg_samples=60,
                    bg_fill="black", min_area_pct=0.5,
-                   frame_step=1, interval_seconds=None,
+                   frame_step=1, interval_seconds=None, image_format="png",
                    log=None, progress_callback=None, should_cancel=None)
         The whole job. Validates the path, makes the output folder, builds the
         background, then walks every frame and writes it out. Returns True or
@@ -333,6 +344,11 @@ It was deleted once the HTML one replaced it; git history still has it.
                                 in red past 2000 images
     describeVideo()             the size, frame rate, frame count and length
                                 line under the file picker
+    effectiveFormat()           the chosen format, or png when the choice was
+                                jpg together with a transparent background
+    updateExample()             shows the name the first file will have, for
+                                example frame_000000.png, padded to the width
+                                of the video's frame count
     requireVideo()              refuses politely when no file is chosen
     requireApi()                refuses until "pywebviewready" has fired
 
@@ -367,6 +383,8 @@ It was deleted once the HTML one replaced it; git history still has it.
         python3 extract_video_frames.py video.MOV --every-seconds 1
         python3 extract_video_frames.py video.MOV --every-seconds 0.5
         python3 extract_video_frames.py video.MOV --every-frames 10
+        python3 extract_video_frames.py video.MOV -f jpg
+        python3 extract_video_frames.py video.MOV -f webp -p pose
 
         --every-seconds and --every-frames cannot be used together.
 
@@ -400,6 +418,21 @@ It was deleted once the HTML one replaced it; git history still has it.
             long held poses                            -> 2 to 5 seconds
         The command line still defaults to every frame, so anything that
         already calls it keeps behaving as it did.
+
+    Image format (default png)
+        png     lossless, keeps transparency, biggest files. The safe choice
+                while the pipeline is being built, because nothing is thrown
+                away.
+        jpg     several times smaller, but lossy. The compression invents
+                small smudges around hard edges, which is exactly where a
+                silhouette against flat black has its information, so prefer
+                it for bulk storage rather than for the frames a detector
+                will be trained on.
+        webp    small like jpg and still able to hold transparency. Not every
+                tool reads it.
+        Asking for jpg with a transparent background quietly becomes png,
+        because jpg has no alpha channel. The interface says so before the
+        run; the command line warns in the log.
 
     Threshold (default 25)
         How different from the empty room a pixel must be to count as body.

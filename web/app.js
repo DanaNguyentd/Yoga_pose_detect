@@ -14,6 +14,10 @@ const ui = {
   threshold: el("threshold"),
   samples: el("samples"),
   minArea: el("minArea"),
+  prefix: el("prefix"),
+  format: el("format"),
+  example: el("example"),
+  formatHint: el("formatHint"),
   interval: el("interval"),
   frameStep: el("frameStep"),
   stepField: el("stepField"),
@@ -120,12 +124,46 @@ function settings() {
     ...sampling(),
     video_path: ui.videoPath.value.trim(),
     output_dir: ui.outputPath.value.trim() || null,
+    prefix: ui.prefix.value.trim() || "frame",
+    image_format: effectiveFormat(),
     remove_bg: ui.removeBg.checked,
     bg_threshold: Number(ui.threshold.value),
     bg_samples: Number(ui.samples.value),
     bg_fill: ui.fill.querySelector(".seg.active").dataset.value,
     min_area_pct: Number(ui.minArea.value),
   };
+}
+
+/* JPEG has no alpha channel, so a transparent background cannot be saved as
+ * one. Python falls back to PNG in that case; the page says so in advance
+ * rather than letting the choice appear to be honoured. */
+function effectiveFormat() {
+  const chosen = ui.format.value;
+  const transparent = ui.fill.querySelector(".seg.active").dataset.value === "alpha";
+  return transparent && chosen === "jpg" ? "png" : chosen;
+}
+
+const FORMAT_NOTES = {
+  png: "PNG is lossless and keeps transparency.",
+  jpg: "JPEG files are far smaller, but lossy and cannot hold transparency.",
+  webp: "WebP is small like JPEG and can still hold transparency.",
+};
+
+/* The digits are padded to the width of the video's frame count, so the
+ * example can only be exact once a video has been probed. */
+function updateExample() {
+  const format = effectiveFormat();
+  const overridden = format !== ui.format.value;
+  const width = video && video.frames ? String(video.frames).length : 6;
+  // Frame 0 is always saved, whatever the interval, so it is a name the
+  // user will really see
+  const name = `${ui.prefix.value.trim() || "frame"}_${"0".padStart(width, "0")}.${format}`;
+
+  ui.example.innerHTML = `Saved as <code>${name}</code>`;
+  ui.example.classList.toggle("warn", overridden);
+  ui.formatHint.textContent = overridden
+    ? "JPEG cannot store transparency, so PNG will be used instead."
+    : FORMAT_NOTES[ui.format.value];
 }
 
 function requireVideo() {
@@ -162,7 +200,11 @@ ui.fill.addEventListener("click", (event) => {
   if (!button) return;
   ui.fill.querySelectorAll(".seg").forEach((b) => b.classList.remove("active"));
   button.classList.add("active");
+  updateExample();
 });
+
+ui.prefix.addEventListener("input", updateExample);
+ui.format.addEventListener("change", updateExample);
 
 ui.interval.addEventListener("change", () => {
   const custom = ui.interval.value === "custom";
@@ -196,6 +238,7 @@ el("chooseVideo").addEventListener("click", async () => {
     video = info.ok ? info : null;
     describeVideo();
     updateEstimate();
+    updateExample();
     if (!info.ok) log(info.error, "err");
   }
 });
@@ -268,5 +311,6 @@ window.appEvents = {
 
 window.addEventListener("pywebviewready", () => {
   apiReady = true;
+  updateExample();
   log("Ready. Choose a video, preview a frame, then extract.");
 });

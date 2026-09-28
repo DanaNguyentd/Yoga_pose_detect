@@ -78,6 +78,50 @@ def to_grayscale(frame):
     return frame
 
 
+# The image formats the tool writes. PNG is lossless and keeps transparency;
+# JPEG is much smaller but lossy and flattens any alpha; WebP is small and
+# still carries alpha.
+IMAGE_FORMATS = {
+    "png": (".png", []),
+    "jpg": (".jpg", [cv2.IMWRITE_JPEG_QUALITY, 95]),
+    "webp": (".webp", [cv2.IMWRITE_WEBP_QUALITY, 95]),
+}
+
+FORMATS_WITHOUT_ALPHA = ("jpg",)
+
+
+def resolve_image_format(image_format="png", fill="black", log=None):
+    """
+    Choose the file extension and the encoder settings to save with.
+
+    Args:
+        image_format (str): One of the keys of IMAGE_FORMATS
+        fill (str): The background fill, because "alpha" needs a format that
+                    can carry transparency
+        log (callable): Where messages go, defaults to print
+
+    Returns:
+        tuple: (extension including the dot, list of cv2.imwrite parameters)
+    """
+
+    emit = log if log is not None else print
+    chosen = (image_format or "png").lower().lstrip(".")
+    if chosen == "jpeg":
+        chosen = "jpg"
+
+    if chosen not in IMAGE_FORMATS:
+        emit(f"  Warning: unknown image format '{image_format}'. Using PNG.")
+        chosen = "png"
+
+    # A transparent background cannot survive a format with no alpha channel
+    if fill == "alpha" and chosen in FORMATS_WITHOUT_ALPHA:
+        emit(f"  Warning: {chosen.upper()} cannot store transparency. "
+             f"Using PNG instead.")
+        chosen = "png"
+
+    return IMAGE_FORMATS[chosen]
+
+
 def resolve_frame_step(fps, frame_step=1, interval_seconds=None, log=None):
     """
     Work out how many frames to advance between saved images.
@@ -186,7 +230,7 @@ def apply_mask(gray_frame, mask, fill="black"):
 
 def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
                    bg_threshold=25, bg_samples=60, bg_fill="black", min_area_pct=0.5,
-                   frame_step=1, interval_seconds=None,
+                   frame_step=1, interval_seconds=None, image_format="png",
                    log=None, progress_callback=None, should_cancel=None):
     """
     Extract all frames from a video file and save them as images.
@@ -204,6 +248,7 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         frame_step (int): Save one frame out of this many (1 saves all)
         interval_seconds (float): Save one frame per this many seconds,
                                   which overrides frame_step
+        image_format (str): "png", "jpg" or "webp" (default: "png")
         log (callable): Where messages go, defaults to print
         progress_callback (callable): Called as (frames_done, frames_total)
         should_cancel (callable): Polled each frame; extraction stops when True
@@ -259,6 +304,9 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     emit(f"  Resolution: {width}x{height}")
     emit(f"  Background removal: {'on' if remove_bg else 'off'}")
 
+    extension, encoder_params = resolve_image_format(image_format, bg_fill, log=emit)
+    emit(f"  Saving as: {extension.lstrip('.').upper()}")
+
     step = resolve_frame_step(fps, frame_step, interval_seconds, log=emit)
     if step > 1 and total_frames > 0:
         expected = (total_frames + step - 1) // step
@@ -301,11 +349,11 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
 
             # Generate output filename with zero-padded frame number
             num_digits = len(str(total_frames))
-            output_filename = f"{prefix}_{frame_count:0{num_digits}d}.png"
+            output_filename = f"{prefix}_{frame_count:0{num_digits}d}{extension}"
             output_path = os.path.join(output_dir, output_filename)
 
             # Save frame as image
-            if cv2.imwrite(output_path, output_frame):
+            if cv2.imwrite(output_path, output_frame, encoder_params):
                 successful_extractions += 1
             else:
                 emit(f"Warning: Failed to save frame {frame_count}")
@@ -380,6 +428,13 @@ def main():
         help="Save one frame out of this many (default: 1, every frame)"
     )
     parser.add_argument(
+        "-f", "--format",
+        choices=sorted(IMAGE_FORMATS),
+        default="png",
+        help="Image format to save (default: png). jpg is far smaller but "
+             "lossy and cannot hold transparency; webp is small and can"
+    )
+    parser.add_argument(
         "--keep-background",
         action="store_true",
         help="Save whole frames without removing the background"
@@ -425,6 +480,7 @@ def main():
         min_area_pct=args.min_area,
         frame_step=args.every_frames,
         interval_seconds=args.every_seconds,
+        image_format=args.format,
     )
 
     if not success:
