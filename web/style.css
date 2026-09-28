@@ -561,3 +561,23 @@ figcaption {
 }
 
 .rangefoot .hint { margin: 0; }
+
+/* Where the playhead or the scrubber is, in time and in frames */
+
+.position {
+  margin: 0;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.position b {
+  color: var(--text);
+  font-weight: 600;
+}

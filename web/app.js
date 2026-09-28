@@ -47,6 +47,7 @@ const ui = {
   startLabel: el("startLabel"),
   endLabel: el("endLabel"),
   rangeSummary: el("rangeSummary"),
+  positionInfo: el("positionInfo"),
 };
 
 let apiReady = false;
@@ -234,16 +235,55 @@ function timecode(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function timecodeExact(seconds) {
+  if (!isFinite(seconds) || seconds < 0) seconds = 0;
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${s}`;
+}
+
+/* Which frame a moment in the video falls on. This is the number the saved
+ * file will carry, so it is the one worth showing. */
+function frameAt(seconds) {
+  if (!video || !video.fps) return null;
+  return Math.min(video.frames - 1, Math.max(0, Math.floor(seconds * video.fps)));
+}
+
+/* The readout under the player: where we are, in time and in frames. */
+function showPosition(seconds) {
+  if (!video) {
+    ui.positionInfo.hidden = true;
+    return;
+  }
+  const frame = frameAt(seconds);
+  ui.positionInfo.innerHTML =
+    `<span>${timecodeExact(seconds)} of ${timecode(video.duration)}</span>` +
+    `<span>frame <b>${frame === null ? "?" : frame.toLocaleString()}</b>` +
+    ` of ${video.frames.toLocaleString()}</span>`;
+  ui.positionInfo.hidden = false;
+}
+
 /* Point the player at the file. Some containers and codecs the web view
  * cannot open, and some platforms refuse local files outright, so a failure
  * is expected rather than exceptional: the scrubber takes over, with frames
  * decoded by OpenCV on the Python side. */
-function loadVideo(path) {
+/* A page loaded from disk is not allowed to fetch other local files, so the
+ * video arrives over a loopback server Python starts for it. That also brings
+ * byte ranges, which is what lets the player seek. */
+async function loadVideo(path) {
   canPlay = false;
   ui.playerPlaceholder.hidden = true;
   ui.scrubber.hidden = true;
+
+  const served = await window.pywebview.api.serve_video(path);
+  if (!served.ok) {
+    log(served.error, "err");
+    useScrubber();
+    return;
+  }
+
   ui.video.hidden = false;
-  ui.video.src = `file://${encodeURI(path)}`;
+  ui.video.src = served.url;
   ui.video.load();
 }
 
@@ -251,6 +291,7 @@ function useScrubber() {
   ui.video.hidden = true;
   ui.scrubber.hidden = false;
   showFrameAt(Number(ui.scrub.value));
+  showPosition(Number(ui.scrub.value));
 }
 
 /* Asking Python for a frame per slider step would queue up decodes faster
@@ -326,9 +367,12 @@ function updateRange() {
   ui.endLabel.textContent = timecode(end);
 
   const whole = start <= 0 && end >= total;
+  const first = frameAt(start);
+  const last = frameAt(end);
   ui.rangeSummary.textContent = whole
     ? "The whole video."
-    : `${timecode(end - start)} of footage, from ${timecode(start)} to ${timecode(end)}.`;
+    : `${timecode(end - start)} of footage, frame ${first === null ? "?" : first.toLocaleString()}`
+      + ` to ${last === null ? "?" : last.toLocaleString()}.`;
 
   updateEstimate();
 }
@@ -359,16 +403,28 @@ ui.fill.addEventListener("click", (event) => {
 ui.video.addEventListener("loadedmetadata", () => {
   canPlay = true;
   ui.scrubber.hidden = true;
+  showPosition(ui.video.currentTime);
 });
+
+ui.video.addEventListener("timeupdate", () => showPosition(ui.video.currentTime));
+ui.video.addEventListener("seeking", () => showPosition(ui.video.currentTime));
 
 ui.video.addEventListener("error", useScrubber);
 
-ui.scrub.addEventListener("input", () => showFrameAt(Number(ui.scrub.value)));
+ui.scrub.addEventListener("input", () => {
+  showFrameAt(Number(ui.scrub.value));
+  showPosition(Number(ui.scrub.value));
+});
 
 for (const slider of [ui.startTime, ui.endTime]) {
   slider.addEventListener("input", () => {
     updateRange();
-    if (!canPlay) showFrameAt(Number(slider.value));
+    showPosition(Number(slider.value));
+    if (canPlay) {
+      ui.video.currentTime = Number(slider.value);   // follow the handle
+    } else {
+      showFrameAt(Number(slider.value));
+    }
   });
 }
 

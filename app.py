@@ -18,9 +18,12 @@ interface, web/ knows nothing about OpenCV, and this module is the seam.
 
 import base64
 import json
+import mimetypes
 import os
+import secrets
 import sys
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
 import webview
@@ -32,6 +35,122 @@ WINDOW_SIZE = (1120, 860)
 WINDOW_MIN_SIZE = (900, 680)
 
 VIDEO_TYPES = ("Video files (*.mov;*.MOV;*.mp4;*.MP4;*.avi;*.m4v;*.mkv)", "All files (*.*)")
+
+
+class _MediaHandler(BaseHTTPRequestHandler):
+    """Serves one video file, with the byte ranges a player needs to seek."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *args):
+        """Keep the server out of the console."""
+
+    def _reject(self, code=404):
+        self.send_response(code)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_HEAD(self):
+        self._respond(body=False)
+
+    def do_GET(self):
+        self._respond(body=True)
+
+    def _respond(self, body):
+        path = self.server.media_path
+        if self.path != self.server.media_route or not path or not os.path.exists(path):
+            self._reject()
+            return
+
+        size = os.path.getsize(path)
+        content_type = (mimetypes.guess_type(path)[0] or "video/mp4")
+        start, end = 0, size - 1
+        partial = False
+
+        # "Range: bytes=start-end" is how a player seeks without fetching all
+        header = self.headers.get("Range")
+        if header and header.startswith("bytes="):
+            first, _, last = header[len("bytes="):].partition("-")
+            try:
+                if first:
+                    start = int(first)
+                    end = int(last) if last else size - 1
+                else:  # a suffix range, "the last N bytes"
+                    start = max(0, size - int(last))
+                partial = True
+            except ValueError:
+                partial = False
+            if start >= size or end >= size or start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+        length = end - start + 1
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+
+        if not body:
+            return
+
+        remaining = length
+        with open(path, "rb") as handle:
+            handle.seek(start)
+            while remaining > 0:
+                chunk = handle.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return  # the player moved on, which is normal while seeking
+                remaining -= len(chunk)
+
+
+class MediaServer:
+    """
+    A loopback web server that hands the page the chosen video.
+
+    The window loads its own files from disk, and a web view will not let a
+    page opened that way fetch other local files, so a <video> pointed at the
+    video's path stays blank. Serving it over the loopback interface solves
+    that and brings byte ranges with it, which is what makes seeking work.
+
+    It listens on 127.0.0.1 only, on a port the system picks, and answers on
+    one unguessable path that changes with every video.
+    """
+
+    def __init__(self):
+        self._server = None
+        self._thread = None
+
+    def serve(self, path):
+        """Start serving a file, replacing whatever was being served. Returns a URL."""
+
+        if self._server is None:
+            self._server = ThreadingHTTPServer(("127.0.0.1", 0), _MediaHandler)
+            self._server.daemon_threads = True
+            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+            self._thread.start()
+
+        self._server.media_path = path
+        self._server.media_route = f"/{secrets.token_urlsafe(16)}"
+        port = self._server.server_address[1]
+        return f"http://127.0.0.1:{port}{self._server.media_route}"
+
+    def stop(self):
+        """Shut the server down, if one was ever started."""
+
+        if self._server is not None:
+            self._server.shutdown()
+            self._server.server_close()
+            self._server = None
 
 
 def resource_path(*parts):
@@ -56,6 +175,7 @@ class Api:
         self.window = None
         self.cancel_requested = threading.Event()
         self.worker = None
+        self.media = MediaServer()
 
         # Rebuilding the background is the slow step, so hold on to the last one
         self._background = None
@@ -121,6 +241,21 @@ class Api:
             }
         finally:
             cap.release()
+
+    def serve_video(self, video_path):
+        """
+        Publish a video on the loopback interface so the page can play it.
+
+        Returns:
+            dict: {"ok": True, "url": ...} or {"ok": False, "error": ...}
+        """
+
+        if not video_path or not os.path.exists(video_path):
+            return {"ok": False, "error": "That video file does not exist."}
+        try:
+            return {"ok": True, "url": self.media.serve(video_path)}
+        except Exception as error:
+            return {"ok": False, "error": f"Could not serve the video: {error}"}
 
     def frame_at(self, video_path, seconds):
         """
