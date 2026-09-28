@@ -154,6 +154,31 @@ check("colour input becomes one channel",
 
 video = os.environ.get("TEST_VIDEO")
 if video and os.path.exists(video):
+    section(f"Seeking, on {video}")
+
+    # Compressed video only stores whole pictures now and then, so a seek
+    # lands on the keyframe before what was asked for. That was once eighteen
+    # seconds early on phone footage, and the file was still named after the
+    # frame that had been asked for.
+    import cv2
+
+    TARGET = 300
+    reader = cv2.VideoCapture(video)
+    for _ in range(TARGET):
+        reader.grab()
+    ok, expected = reader.read()          # the frame after TARGET grabs is TARGET
+    reader.release()
+
+    reader = cv2.VideoCapture(video)
+    landed = analysis.seek_to_frame(reader, TARGET, QUIET)
+    ok, seeked = reader.read()
+    reader.release()
+
+    check("the reader ends up on the frame asked for", landed, TARGET)
+    if expected is not None and seeked is not None:
+        difference = float(np.abs(expected.astype(int) - seeked.astype(int)).mean())
+        check("and it is the same picture, not a nearby one", difference, 0.0)
+
     section(f"End to end, on {video}")
     out = tempfile.mkdtemp(prefix="frame_test_")
     try:

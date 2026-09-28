@@ -223,15 +223,30 @@ It was deleted once the HTML one replaced it; git history still has it.
         One channel out, whatever came in. Shared so that the sampling pass
         and the extraction pass can never disagree.
 
+    seek_to_frame(cap, target, log=None)
+        Puts a reader exactly on a frame, and returns where it ended up.
+
+        Asking a video reader for a frame does not land on it. Compressed
+        video stores whole pictures only now and then, everything between
+        being described as changes to those, so a seek can only reach the
+        keyframe before what was asked for. On iPhone HEVC footage that was
+        measured at eighteen seconds early: asking for frame 1800 arrived at
+        1260. The frames were then saved under the numbers that had been asked
+        for, so both the pictures and their names were wrong.
+
+        The reader does report where it landed, so the rest is stepped over
+        with grab(), which does not decode a picture. Reaching frame 1800 that
+        way takes about two seconds on a 400 MB clip.
+
     resolve_frame_range(fps, total_frames, start_seconds=None,
                         end_seconds=None, log=None)
         Turns a span in seconds into the frames it covers, as (first, one past
         the last). Both ends default to the whole video. An end that is not
         after its start, or a video that reports no rate or length, falls back
         to the whole video with a warning.
-        extract_frames seeks straight to the first frame rather than decoding
-        everything before it, and counts the saving step from there, so the
-        first frame of a chosen range is always kept.
+        extract_frames uses seek_to_frame to reach the first frame rather
+        than decoding everything before it, and counts the saving step from
+        there, so the first frame of a chosen range is always kept.
 
     resolve_image_format(image_format="png", fill="black", log=None)
         Returns the file extension and the cv2.imwrite parameters for one of

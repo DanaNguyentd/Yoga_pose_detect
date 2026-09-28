@@ -146,6 +146,55 @@ def resolve_image_format(image_format="png", fill="black", log=None):
     return IMAGE_FORMATS[chosen]
 
 
+def seek_to_frame(cap, target, log=None):
+    """
+    Position a reader exactly on a frame.
+
+    Asking a video reader for a frame does not land on it. Compressed video
+    only stores whole pictures now and then, everything between being
+    described as changes to those, so a seek can only arrive at the keyframe
+    before what was asked for. On phone footage that can be many seconds
+    early: asking for frame 1800 of an iPhone HEVC clip arrives at 1260.
+
+    The reader does report where it landed, so the rest of the way is decoded
+    frame by frame, which is quick because those frames are only stepped over,
+    never turned into images.
+
+    Args:
+        cap (cv2.VideoCapture): An open reader
+        target (int): The frame that the next read should return
+        log (callable): Where messages go, defaults to print
+
+    Returns:
+        int: The frame the next read will actually return
+    """
+
+    emit = log if log is not None else print
+
+    if target <= 0:
+        return 0
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, target)
+    position = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+    # Landing past the target is not something we can undo, so start again
+    if position > target:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        position = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+    landed = position
+    while position < target:
+        if not cap.grab():
+            break
+        position += 1
+
+    if landed != target:
+        emit(f"  Seek arrived at frame {landed}, stepped forward "
+             f"{position - landed} to reach {position}")
+
+    return position
+
+
 def resolve_frame_range(fps, total_frames, start_seconds=None,
                         end_seconds=None, log=None):
     """
@@ -401,7 +450,7 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
 
     # Jumping straight to the start beats decoding everything before it
     if start_frame > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        start_frame = seek_to_frame(cap, start_frame, log=emit)
 
     frame_count = start_frame
     successful_extractions = 0

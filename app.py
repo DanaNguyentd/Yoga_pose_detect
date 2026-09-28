@@ -278,7 +278,10 @@ class Api:
         try:
             fps = float(cap.get(cv2.CAP_PROP_FPS)) or 0.0
             if fps > 0:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(float(seconds) * fps)))
+                # Seeking alone lands on the keyframe before the moment asked
+                # for, which on phone footage can be many seconds early
+                analysis.seek_to_frame(cap, max(0, int(float(seconds) * fps)),
+                                       log=lambda message: None)
             ret, frame = cap.read()
             if not ret:
                 return {"ok": False, "error": "Could not read a frame there."}
@@ -436,7 +439,7 @@ class Api:
         try:
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             if total > 0:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, total // 2)
+                analysis.seek_to_frame(cap, total // 2, log=lambda message: None)
             ret, frame = cap.read()
             return frame if ret else None
         finally:
