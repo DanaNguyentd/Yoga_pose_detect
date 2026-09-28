@@ -122,6 +122,48 @@ def resolve_image_format(image_format="png", fill="black", log=None):
     return IMAGE_FORMATS[chosen]
 
 
+def resolve_frame_range(fps, total_frames, start_seconds=None,
+                        end_seconds=None, log=None):
+    """
+    Turn a span of the video, in seconds, into the frames it covers.
+
+    Args:
+        fps (float): Frames per second reported by the video
+        total_frames (int): Frames in the whole video
+        start_seconds (float): Where to begin, None for the beginning
+        end_seconds (float): Where to stop, None for the end
+        log (callable): Where messages go, defaults to print
+
+    Returns:
+        tuple: (first frame to read, one past the last frame to read)
+    """
+
+    emit = log if log is not None else print
+    last = total_frames if total_frames and total_frames > 0 else 0
+
+    if start_seconds is None and end_seconds is None:
+        return 0, last
+
+    if not fps or fps <= 0 or last <= 0:
+        emit("  Warning: the video reports no frame rate or length, so the "
+             "chosen range cannot be applied. Using the whole video.")
+        return 0, last
+
+    start_frame = max(0, int(math.floor(float(start_seconds or 0) * fps)))
+    end_frame = last if end_seconds is None else min(
+        last, int(math.ceil(float(end_seconds) * fps))
+    )
+
+    if end_frame <= start_frame:
+        emit("  Warning: the end of the range is not after its start. "
+             "Using the whole video.")
+        return 0, last
+
+    emit(f"  Range: {start_frame / fps:.2f}s to {end_frame / fps:.2f}s "
+         f"(frames {start_frame} to {end_frame - 1})")
+    return start_frame, end_frame
+
+
 def resolve_frame_step(fps, frame_step=1, interval_seconds=None, log=None):
     """
     Work out how many frames to advance between saved images.
@@ -231,6 +273,7 @@ def apply_mask(gray_frame, mask, fill="black"):
 def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
                    bg_threshold=25, bg_samples=60, bg_fill="black", min_area_pct=0.5,
                    frame_step=1, interval_seconds=None, image_format="png",
+                   start_seconds=None, end_seconds=None,
                    log=None, progress_callback=None, should_cancel=None):
     """
     Extract all frames from a video file and save them as images.
@@ -249,6 +292,8 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         interval_seconds (float): Save one frame per this many seconds,
                                   which overrides frame_step
         image_format (str): "png", "jpg" or "webp" (default: "png")
+        start_seconds (float): Where in the video to begin, None for the start
+        end_seconds (float): Where to stop, None for the end
         log (callable): Where messages go, defaults to print
         progress_callback (callable): Called as (frames_done, frames_total)
         should_cancel (callable): Polled each frame; extraction stops when True
@@ -307,31 +352,44 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     extension, encoder_params = resolve_image_format(image_format, bg_fill, log=emit)
     emit(f"  Saving as: {extension.lstrip('.').upper()}")
 
-    step = resolve_frame_step(fps, frame_step, interval_seconds, log=emit)
-    if step > 1 and total_frames > 0:
-        expected = (total_frames + step - 1) // step
-        emit(f"  Images to be written: {expected} of {total_frames} frames")
+    start_frame, end_frame = resolve_frame_range(
+        fps, total_frames, start_seconds, end_seconds, log=emit
+    )
+    frames_in_range = max(0, end_frame - start_frame)
 
-    frame_count = 0
+    step = resolve_frame_step(fps, frame_step, interval_seconds, log=emit)
+    if frames_in_range > 0:
+        expected = (frames_in_range + step - 1) // step
+        emit(f"  Images to be written: {expected} of {frames_in_range} frames")
+
+    # Jumping straight to the start beats decoding everything before it
+    if start_frame > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+    frame_count = start_frame
     successful_extractions = 0
     empty_masks = 0
 
     try:
         while True:
+            if end_frame and frame_count >= end_frame:
+                break
+
             ret, frame = cap.read()
 
             if not ret:
                 break
 
             if should_cancel is not None and should_cancel():
-                emit(f"\nCancelled after {frame_count} frames")
+                emit(f"\nCancelled after {frame_count - start_frame} frames")
                 return False
 
-            # Frames between saves cost only their decode: no mask, no file
-            if frame_count % step != 0:
+            # Frames between saves cost only their decode: no mask, no file.
+            # Counting from the start of the range keeps its first frame.
+            if (frame_count - start_frame) % step != 0:
                 frame_count += 1
                 if progress_callback is not None and frame_count % 5 == 0:
-                    progress_callback(frame_count, total_frames)
+                    progress_callback(frame_count - start_frame, frames_in_range)
                 continue
 
             # Convert to grayscale if not already (for consistent handling of BW video)
@@ -366,21 +424,23 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
 
             # Report progress more often than that, for a UI progress bar
             if progress_callback is not None and frame_count % 5 == 0:
-                progress_callback(frame_count, total_frames)
+                progress_callback(frame_count - start_frame, frames_in_range)
+
+        read_count = frame_count - start_frame
 
         emit(f"\nExtraction Complete!")
         if step > 1:
             emit(f"Images written: {successful_extractions} "
-                 f"(from {frame_count} frames, one in every {step})")
+                 f"(from {read_count} frames, one in every {step})")
         else:
-            emit(f"Total frames extracted: {successful_extractions}/{frame_count}")
+            emit(f"Total frames extracted: {successful_extractions}/{read_count}")
         if remove_bg and empty_masks:
             emit(f"Frames where nothing was detected: {empty_masks} "
                   f"(lower --bg-threshold if that seems wrong)")
         emit(f"Frames saved to: {output_dir}")
 
         if progress_callback is not None:
-            progress_callback(frame_count, frame_count)
+            progress_callback(read_count, read_count)
 
         return True
 
@@ -426,6 +486,18 @@ def main():
         type=int,
         default=1,
         help="Save one frame out of this many (default: 1, every frame)"
+    )
+    parser.add_argument(
+        "--start",
+        type=float,
+        default=None,
+        help="Begin at this many seconds into the video (default: the start)"
+    )
+    parser.add_argument(
+        "--end",
+        type=float,
+        default=None,
+        help="Stop at this many seconds into the video (default: the end)"
     )
     parser.add_argument(
         "-f", "--format",
@@ -481,6 +553,8 @@ def main():
         frame_step=args.every_frames,
         interval_seconds=args.every_seconds,
         image_format=args.format,
+        start_seconds=args.start,
+        end_seconds=args.end,
     )
 
     if not success:

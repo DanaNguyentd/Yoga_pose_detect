@@ -122,6 +122,43 @@ class Api:
         finally:
             cap.release()
 
+    def frame_at(self, video_path, seconds):
+        """
+        Return one untouched frame from a moment in the video.
+
+        The page uses this to show where the chosen range starts and ends, and
+        as a scrubber when the web view cannot play the file itself, which
+        happens with codecs it does not know. OpenCV decodes it either way.
+
+        Returns:
+            dict: {"ok": True, "image": "<data URI>"} or {"ok": False, ...}
+        """
+
+        if not video_path or not os.path.exists(video_path):
+            return {"ok": False, "error": "That video file does not exist."}
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return {"ok": False, "error": "Could not open that video."}
+        try:
+            fps = float(cap.get(cv2.CAP_PROP_FPS)) or 0.0
+            if fps > 0:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(float(seconds) * fps)))
+            ret, frame = cap.read()
+            if not ret:
+                return {"ok": False, "error": "Could not read a frame there."}
+
+            ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if not ok:
+                return {"ok": False, "error": "Could not encode that frame."}
+            return {
+                "ok": True,
+                "image": "data:image/jpeg;base64,"
+                         + base64.b64encode(encoded.tobytes()).decode(),
+            }
+        finally:
+            cap.release()
+
     # ---------------------------------------------------------------- preview
 
     def preview(self, settings):
@@ -218,6 +255,8 @@ class Api:
                 frame_step=int(settings.get("frame_step") or 1),
                 interval_seconds=settings.get("interval_seconds") or None,
                 image_format=settings.get("image_format") or "png",
+                start_seconds=settings.get("start_seconds"),
+                end_seconds=settings.get("end_seconds"),
                 log=self._log,
                 progress_callback=lambda done, total: self._emit("progress", done, total),
                 should_cancel=self.cancel_requested.is_set,

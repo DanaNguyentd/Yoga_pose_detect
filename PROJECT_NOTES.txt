@@ -86,7 +86,7 @@ It was deleted once the HTML one replaced it; git history still has it.
         -> the page loads, and once pywebview has injected its bridge the page
            receives the "pywebviewready" event and unlocks its buttons
 
-4.2 CHOOSING A VIDEO
+4.2 CHOOSING A VIDEO, AND CHOOSING A PART OF IT
 
     user clicks "Choose..."
         -> web/app.js calls window.pywebview.api.choose_video()
@@ -97,6 +97,17 @@ It was deleted once the HTML one replaced it; git history still has it.
     This is the reason the project uses pywebview rather than a browser. A
     browser can only hand over a file's CONTENTS, so a multi-gigabyte video
     would have to be copied before anything could start.
+
+    The page then calls probe() and shows the video in a player, with two
+    handles under it for the part to work on. Both default to the whole video.
+
+    The player is an ordinary <video> pointed at the file. That fails often
+    enough to be planned for rather than patched later: some platforms refuse
+    local files, and WebKit cannot decode every codec that ends in .MOV,
+    ProRes among them. On failure the page hides the player and scrubs through
+    frames fetched from frame_at() instead, which works for anything OpenCV
+    can open. Either way "use current" reads the position from whichever of
+    the two is showing.
 
 4.3 PREVIEWING ONE FRAME
 
@@ -203,6 +214,16 @@ It was deleted once the HTML one replaced it; git history still has it.
         One channel out, whatever came in. Shared so that the sampling pass
         and the extraction pass can never disagree.
 
+    resolve_frame_range(fps, total_frames, start_seconds=None,
+                        end_seconds=None, log=None)
+        Turns a span in seconds into the frames it covers, as (first, one past
+        the last). Both ends default to the whole video. An end that is not
+        after its start, or a video that reports no rate or length, falls back
+        to the whole video with a warning.
+        extract_frames seeks straight to the first frame rather than decoding
+        everything before it, and counts the saving step from there, so the
+        first frame of a chosen range is always kept.
+
     resolve_image_format(image_format="png", fill="black", log=None)
         Returns the file extension and the cv2.imwrite parameters for one of
         three formats:
@@ -237,6 +258,7 @@ It was deleted once the HTML one replaced it; git history still has it.
                    remove_bg=True, bg_threshold=25, bg_samples=60,
                    bg_fill="black", min_area_pct=0.5,
                    frame_step=1, interval_seconds=None, image_format="png",
+                   start_seconds=None, end_seconds=None,
                    log=None, progress_callback=None, should_cancel=None)
         The whole job. Validates the path, makes the output folder, builds the
         background, then walks every frame and writes it out. Returns True or
@@ -283,6 +305,13 @@ It was deleted once the HTML one replaced it; git history still has it.
 
         _busy()
             True while a worker thread is still alive.
+
+        frame_at(video_path, seconds) -> {"ok": True, "image": "<data URI>"}
+            One untouched frame from a moment in the video, as a JPEG data
+            URI. The page uses it to scrub when the web view cannot play the
+            file itself, which happens with containers and codecs it does not
+            know, and on platforms that refuse local files. OpenCV decodes
+            what the web view will not.
 
         probe(video_path) -> {"ok": True, "fps", "frames", "duration",
                               "width", "height"}
@@ -347,6 +376,23 @@ It was deleted once the HTML one replaced it; git history still has it.
                                 in red past 2000 images
     describeVideo()             the size, frame rate, frame count and length
                                 line under the file picker
+    timecode(seconds)           seconds as m:ss
+    loadVideo(path)             points the player at the file, as a file: URL
+    useScrubber()               swaps the player for the frame scrubber when
+                                the video will not play
+    showFrameAt(seconds)        asks Python for that frame. One request is in
+                                flight at a time and the newest position wins,
+                                or dragging the slider would queue decodes
+                                faster than they finish
+    duration()                  the video's length, or 0 before one is chosen
+    chosenRange()               start_seconds and end_seconds, each null when
+                                that end has not been moved, which is what the
+                                analysis reads as "the whole video"
+    resetRange()                both handles back to the full span
+    updateRange()               keeps the two handles from crossing, writes
+                                the timecodes and the summary, re-estimates
+    playhead()                  the current position, from the player or the
+                                scrubber, whichever is showing
     effectiveFormat()           the chosen format, or png when the choice was
                                 jpg together with a transparent background
     syncFormatConstraints()     disables the choices the chosen format cannot
@@ -416,6 +462,12 @@ It was deleted once the HTML one replaced it; git history still has it.
 
 7. SETTINGS, AND WHAT TO CHANGE WHEN THE RESULT IS WRONG
 --------------------------------------------------------------------------------
+
+    Detect from / Detect to (default: the whole video)
+        Only the chosen span is read. Extraction seeks straight to the first
+        frame, so trimming a long video is quick rather than merely tidy.
+        Saved files still carry their source frame number, so a range starting
+        at 1:00 of a 30 fps video begins at frame_001800.
 
     How many frames (default in the interface: one per second)
         Every frame is almost never what you want. Pose detection learns

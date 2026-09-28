@@ -145,6 +145,45 @@
 
   <section class="panel results">
 
+    <div class="player" id="player">
+      <div class="stage">
+        <video id="video" controls preload="metadata"></video>
+
+        <div class="scrubber" id="scrubber" hidden>
+          <img id="scrubImage" alt="Frame at the scrubbed position">
+          <p class="hint" id="scrubNote">
+            This video cannot be played here, so frames are shown instead.
+          </p>
+          <input type="range" id="scrub" min="0" max="100" step="0.1" value="0">
+        </div>
+
+        <p class="placeholder small" id="playerPlaceholder">
+          Choose a video to see it here
+        </p>
+      </div>
+
+      <div class="rangebar" id="rangebar" hidden>
+        <div class="rangerow">
+          <span class="rangelabel">Detect from</span>
+          <input type="range" id="startTime" min="0" max="100" step="0.1" value="0">
+          <output class="timecode" id="startLabel">0:00</output>
+          <button type="button" class="btn tiny" id="startHere">use current</button>
+        </div>
+
+        <div class="rangerow">
+          <span class="rangelabel">Detect to</span>
+          <input type="range" id="endTime" min="0" max="100" step="0.1" value="100">
+          <output class="timecode" id="endLabel">0:00</output>
+          <button type="button" class="btn tiny" id="endHere">use current</button>
+        </div>
+
+        <div class="rangefoot">
+          <span id="rangeSummary" class="hint">The whole video.</span>
+          <button type="button" class="btn tiny" id="rangeReset">whole video</button>
+        </div>
+      </div>
+    </div>
+
     <div class="preview" id="preview">
       <div class="placeholder" id="placeholder">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><circle cx="9" cy="10" r="2"/><path d="m5 18 5-5 3 3 3-3 3 4"/></svg>

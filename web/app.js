@@ -35,11 +35,24 @@ const ui = {
   status: el("status"),
   counter: el("counter"),
   log: el("log"),
+  player: el("player"),
+  video: el("video"),
+  scrubber: el("scrubber"),
+  scrubImage: el("scrubImage"),
+  scrub: el("scrub"),
+  playerPlaceholder: el("playerPlaceholder"),
+  rangebar: el("rangebar"),
+  startTime: el("startTime"),
+  endTime: el("endTime"),
+  startLabel: el("startLabel"),
+  endLabel: el("endLabel"),
+  rangeSummary: el("rangeSummary"),
 };
 
 let apiReady = false;
 let running = false;
-let video = null;   // what probe() last reported about the chosen file
+let video = null;     // what probe() last reported about the chosen file
+let canPlay = false;  // whether the web view could open the file itself
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -93,7 +106,16 @@ function plannedCount() {
     if (!video.fps) return null;
     step = Math.max(1, Math.round(video.fps * interval_seconds));
   }
-  return { count: Math.ceil(video.frames / step), step };
+
+  // Only the chosen span is read, so only it is counted
+  const { start_seconds, end_seconds } = chosenRange();
+  const first = start_seconds && video.fps ? Math.floor(start_seconds * video.fps) : 0;
+  const last = end_seconds && video.fps
+    ? Math.min(video.frames, Math.ceil(end_seconds * video.fps))
+    : video.frames;
+  const inRange = Math.max(0, last - first);
+
+  return { count: Math.ceil(inRange / step), step, inRange };
 }
 
 function updateEstimate() {
@@ -106,7 +128,7 @@ function updateEstimate() {
   const every = step === 1 ? "every frame" : `one frame in every ${step}`;
   ui.estimate.innerHTML =
     `This will write <strong>${count.toLocaleString()}</strong> images ` +
-    `(${every} of ${video.frames.toLocaleString()}).`;
+    `(${every} of ${planned.inRange.toLocaleString()}).`;
   ui.estimate.classList.toggle("heavy", count > 2000);
   ui.estimate.hidden = false;
 }
@@ -132,6 +154,7 @@ function settings() {
     output_dir: ui.outputPath.value.trim() || null,
     prefix: ui.prefix.value.trim() || "frame",
     image_format: effectiveFormat(),
+    ...chosenRange(),
     remove_bg: ui.removeBg.checked,
     bg_threshold: Number(ui.threshold.value),
     bg_samples: Number(ui.samples.value),
@@ -202,6 +225,114 @@ function requireApi() {
   return false;
 }
 
+/* ----------------------------------------------------------------- player */
+
+function timecode(seconds) {
+  if (!isFinite(seconds) || seconds < 0) seconds = 0;
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/* Point the player at the file. Some containers and codecs the web view
+ * cannot open, and some platforms refuse local files outright, so a failure
+ * is expected rather than exceptional: the scrubber takes over, with frames
+ * decoded by OpenCV on the Python side. */
+function loadVideo(path) {
+  canPlay = false;
+  ui.playerPlaceholder.hidden = true;
+  ui.scrubber.hidden = true;
+  ui.video.hidden = false;
+  ui.video.src = `file://${encodeURI(path)}`;
+  ui.video.load();
+}
+
+function useScrubber() {
+  ui.video.hidden = true;
+  ui.scrubber.hidden = false;
+  showFrameAt(Number(ui.scrub.value));
+}
+
+/* Asking Python for a frame per slider step would queue up decodes faster
+ * than they finish, so only one request is in flight at a time and the most
+ * recent position wins. */
+let framePending = false;
+let frameWanted = null;
+
+async function showFrameAt(seconds) {
+  if (!apiReady || !ui.videoPath.value) return;
+  frameWanted = seconds;
+  if (framePending) return;
+
+  framePending = true;
+  try {
+    while (frameWanted !== null) {
+      const at = frameWanted;
+      frameWanted = null;
+      const result = await window.pywebview.api.frame_at(ui.videoPath.value, at);
+      if (result.ok) ui.scrubImage.src = result.image;
+    }
+  } finally {
+    framePending = false;
+  }
+}
+
+/* ------------------------------------------------------------ chosen range */
+
+function duration() {
+  return video && video.duration ? video.duration : 0;
+}
+
+/* null means "the whole video", which is what the analysis expects for an
+ * end that was never moved. */
+function chosenRange() {
+  const total = duration();
+  if (!total) return { start_seconds: null, end_seconds: null };
+  const start = Number(ui.startTime.value);
+  const end = Number(ui.endTime.value);
+  return {
+    start_seconds: start > 0 ? start : null,
+    end_seconds: end < total ? end : null,
+  };
+}
+
+function resetRange() {
+  const total = duration();
+  for (const slider of [ui.startTime, ui.endTime]) {
+    slider.min = 0;
+    slider.max = total || 100;
+    slider.step = total > 120 ? 0.5 : 0.1;
+  }
+  ui.startTime.value = 0;
+  ui.endTime.value = total || 100;
+  updateRange();
+}
+
+function updateRange() {
+  const total = duration();
+
+  // The two handles must not cross: whichever moved gives way to the other
+  if (Number(ui.startTime.value) >= Number(ui.endTime.value)) {
+    if (document.activeElement === ui.startTime) {
+      ui.startTime.value = Math.max(0, Number(ui.endTime.value) - Number(ui.startTime.step));
+    } else {
+      ui.endTime.value = Math.min(total, Number(ui.startTime.value) + Number(ui.endTime.step));
+    }
+  }
+
+  const start = Number(ui.startTime.value);
+  const end = Number(ui.endTime.value);
+  ui.startLabel.textContent = timecode(start);
+  ui.endLabel.textContent = timecode(end);
+
+  const whole = start <= 0 && end >= total;
+  ui.rangeSummary.textContent = whole
+    ? "The whole video."
+    : `${timecode(end - start)} of footage, from ${timecode(start)} to ${timecode(end)}.`;
+
+  updateEstimate();
+}
+
 /* ------------------------------------------------------------- form wiring */
 
 ui.threshold.addEventListener("input", () => {
@@ -224,6 +355,39 @@ ui.fill.addEventListener("click", (event) => {
   button.classList.add("active");
   updateExample();
 });
+
+ui.video.addEventListener("loadedmetadata", () => {
+  canPlay = true;
+  ui.scrubber.hidden = true;
+});
+
+ui.video.addEventListener("error", useScrubber);
+
+ui.scrub.addEventListener("input", () => showFrameAt(Number(ui.scrub.value)));
+
+for (const slider of [ui.startTime, ui.endTime]) {
+  slider.addEventListener("input", () => {
+    updateRange();
+    if (!canPlay) showFrameAt(Number(slider.value));
+  });
+}
+
+/* "use current" takes the position from whichever view is showing */
+function playhead() {
+  return canPlay ? ui.video.currentTime : Number(ui.scrub.value);
+}
+
+el("startHere").addEventListener("click", () => {
+  ui.startTime.value = playhead();
+  updateRange();
+});
+
+el("endHere").addEventListener("click", () => {
+  ui.endTime.value = playhead();
+  updateRange();
+});
+
+el("rangeReset").addEventListener("click", resetRange);
 
 ui.prefix.addEventListener("input", updateExample);
 ui.format.addEventListener("change", () => {
@@ -262,6 +426,15 @@ el("chooseVideo").addEventListener("click", async () => {
     const info = await window.pywebview.api.probe(result.path);
     video = info.ok ? info : null;
     describeVideo();
+
+    if (video) {
+      ui.scrub.max = video.duration || 100;
+      ui.scrub.value = 0;
+      ui.rangebar.hidden = false;
+      resetRange();
+      loadVideo(result.path);
+    }
+
     updateEstimate();
     updateExample();
     if (!info.ok) log(info.error, "err");
