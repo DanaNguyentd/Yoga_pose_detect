@@ -12,9 +12,7 @@ import cv2
 import math
 import numpy as np
 import os
-from pathlib import Path
 import argparse
-from datetime import datetime
 
 
 def compute_background(video_path, sample_count=60, log=None):
@@ -77,6 +75,9 @@ def to_grayscale(frame):
         return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return frame
 
+
+# Where frames go when no folder is chosen: beside the video being read
+DEFAULT_OUTPUT_FOLDER = "frame_result"
 
 # The image formats the tool writes. PNG is lossless and keeps transparency;
 # JPEG is much smaller but lossy and flattens any alpha; WebP is small and
@@ -280,8 +281,8 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
 
     Args:
         video_path (str): Path to the input .MOV video file
-        output_dir (str): Directory to save extracted frames.
-                         If None, creates a folder in the same directory as video
+        output_dir (str): Directory to save extracted frames. If None, a
+                         "frame_result" folder beside the video is used
         prefix (str): Prefix for output image filenames (default: "frame")
         remove_bg (bool): Remove the static background before saving
         bg_threshold (int): Foreground difference threshold, 0 for automatic
@@ -312,12 +313,14 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     if not video_path.lower().endswith('.mov'):
         emit(f"Warning: File does not have .MOV extension. Proceeding anyway...")
 
-    # Create output directory
+    # Create output directory. With nowhere given, save beside the video
+    # rather than in whatever folder the program happens to be running from,
+    # which is not somewhere anyone would think to look.
     if output_dir is None:
-        video_name = Path(video_path).stem
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = f"{video_name}_frames_{timestamp}"
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(video_path)),
+                                  DEFAULT_OUTPUT_FOLDER)
 
+    output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     emit(f"Output directory: {output_dir}")
 

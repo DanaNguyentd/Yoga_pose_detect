@@ -190,7 +190,9 @@ It was deleted once the HTML one replaced it; git history still has it.
             cv2.imwrite()               <prefix>_<0-padded number><ext>
 
         The prefix defaults to "frame" and the extension comes from the chosen
-        image format, so the first file is usually frame_000000.png. The
+        image format, so the first file is usually frame_000000.png. With no
+        output folder chosen they land in a frame_result folder beside the
+        video. The
         interface shows the exact name under the controls as you type.
 
         build_foreground_mask() in detail:
@@ -260,6 +262,13 @@ It was deleted once the HTML one replaced it; git history still has it.
     apply_mask(gray_frame, mask, fill="black")
         Keeps the masked pixels, replaces the rest. "black" and "white" give a
         flat backdrop; "alpha" returns four channels for a transparent PNG.
+
+    DEFAULT_OUTPUT_FOLDER = "frame_result"
+        Where frames go when no folder is chosen: a folder of that name beside
+        the video being read. The path is made absolute before anything is
+        written, so output never depends on which directory the program was
+        started from. That was wrong once, and frames appeared in the source
+        repository instead of next to the footage.
 
     extract_frames(video_path, output_dir=None, prefix="frame",
                    remove_bg=True, bg_threshold=25, bg_samples=60,

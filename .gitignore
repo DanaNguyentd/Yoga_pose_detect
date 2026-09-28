@@ -223,3 +223,7 @@ __marimo__/
 
 # This project keeps its PyInstaller definition under version control
 !build.spec
+
+# Extracted frames: output, not source
+frame_result/
+*_frames_*/
