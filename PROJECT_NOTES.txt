@@ -171,6 +171,9 @@ It was deleted once the HTML one replaced it; git history still has it.
             apply_mask()                keep the person, replace the rest
             cv2.imwrite()               <prefix>_<0-padded number>.png
 
+        The interface does not offer a prefix, so images from the application
+        are always frame_<number>.png. The command line keeps --prefix.
+
         build_foreground_mask() in detail:
             absdiff(frame, background)  how far each pixel moved from empty
             GaussianBlur 5x5            calm the sensor noise

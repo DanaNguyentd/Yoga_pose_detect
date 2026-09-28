@@ -209,6 +209,8 @@ class Api:
             succeeded = analysis.extract_frames(
                 settings["video_path"],
                 settings.get("output_dir") or None,
+                # The interface does not offer a prefix: every image is
+                # frame_<number>.png, named after its frame in the video
                 settings.get("prefix") or "frame",
                 remove_bg=bool(settings["remove_bg"]),
                 bg_threshold=int(settings["bg_threshold"]),

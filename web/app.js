@@ -9,7 +9,6 @@ const el = (id) => document.getElementById(id);
 const ui = {
   videoPath: el("videoPath"),
   outputPath: el("outputPath"),
-  prefix: el("prefix"),
   removeBg: el("removeBg"),
   bgOptions: el("bgOptions"),
   threshold: el("threshold"),
@@ -121,7 +120,6 @@ function settings() {
     ...sampling(),
     video_path: ui.videoPath.value.trim(),
     output_dir: ui.outputPath.value.trim() || null,
-    prefix: ui.prefix.value.trim() || "frame",
     remove_bg: ui.removeBg.checked,
     bg_threshold: Number(ui.threshold.value),
     bg_samples: Number(ui.samples.value),
