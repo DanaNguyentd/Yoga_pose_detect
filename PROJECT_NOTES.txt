@@ -191,8 +191,8 @@ It was deleted once the HTML one replaced it; git history still has it.
 
         The prefix defaults to "frame" and the extension comes from the chosen
         image format, so the first file is usually frame_000000.png. With no
-        output folder chosen they land in a frame_result folder beside the
-        video. The
+        output folder chosen they land beside the video, in a folder named
+        after it and the time of the run. The
         interface shows the exact name under the controls as you type.
 
         build_foreground_mask() in detail:
@@ -263,12 +263,15 @@ It was deleted once the HTML one replaced it; git history still has it.
         Keeps the masked pixels, replaces the rest. "black" and "white" give a
         flat backdrop; "alpha" returns four channels for a transparent PNG.
 
-    DEFAULT_OUTPUT_FOLDER = "frame_result"
-        Where frames go when no folder is chosen: a folder of that name beside
-        the video being read. The path is made absolute before anything is
-        written, so output never depends on which directory the program was
-        started from. That was wrong once, and frames appeared in the source
-        repository instead of next to the footage.
+    default_output_dir(video_path)
+        Where frames go when no folder is chosen: beside the video, in
+        frame_result_<video name>_<date>_<time>, for example
+        frame_result_IMG_8803_20260928_143015. Naming the video and the moment
+        keeps a second video, or the same one run again with other settings,
+        from mixing its images in with an earlier batch.
+        The path is absolute, so output never depends on which directory the
+        program was started from. That was wrong once, and frames appeared in
+        the source repository instead of next to the footage.
 
     extract_frames(video_path, output_dir=None, prefix="frame",
                    remove_bg=True, bg_threshold=25, bg_samples=60,

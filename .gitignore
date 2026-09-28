@@ -225,5 +225,5 @@ __marimo__/
 !build.spec
 
 # Extracted frames: output, not source
-frame_result/
+frame_result*/
 *_frames_*/

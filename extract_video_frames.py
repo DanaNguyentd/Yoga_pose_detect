@@ -13,6 +13,7 @@ import math
 import numpy as np
 import os
 import argparse
+from datetime import datetime
 
 
 def compute_background(video_path, sample_count=60, log=None):
@@ -76,8 +77,30 @@ def to_grayscale(frame):
     return frame
 
 
-# Where frames go when no folder is chosen: beside the video being read
-DEFAULT_OUTPUT_FOLDER = "frame_result"
+# Leading part of the folder frames go to when none is chosen
+DEFAULT_OUTPUT_PREFIX = "frame_result"
+
+
+def default_output_dir(video_path):
+    """
+    Where frames go when no folder was chosen.
+
+    Beside the video, in a folder naming the video and the moment of the run,
+    so extracting a second video, or the same one again with other settings,
+    never mixes its images in with an earlier batch.
+
+    Args:
+        video_path (str): The video being read
+
+    Returns:
+        str: An absolute path, for example
+             /Users/me/clips/frame_result_IMG_8803_20260928_143015
+    """
+
+    folder = os.path.dirname(os.path.abspath(video_path))
+    name = os.path.splitext(os.path.basename(video_path))[0]
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return os.path.join(folder, f"{DEFAULT_OUTPUT_PREFIX}_{name}_{stamp}")
 
 # The image formats the tool writes. PNG is lossless and keeps transparency;
 # JPEG is much smaller but lossy and flattens any alpha; WebP is small and
@@ -282,7 +305,8 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     Args:
         video_path (str): Path to the input .MOV video file
         output_dir (str): Directory to save extracted frames. If None, a
-                         "frame_result" folder beside the video is used
+                         frame_result_<video>_<date>_<time> folder beside the
+                         video is used
         prefix (str): Prefix for output image filenames (default: "frame")
         remove_bg (bool): Remove the static background before saving
         bg_threshold (int): Foreground difference threshold, 0 for automatic
@@ -317,8 +341,7 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     # rather than in whatever folder the program happens to be running from,
     # which is not somewhere anyone would think to look.
     if output_dir is None:
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(video_path)),
-                                  DEFAULT_OUTPUT_FOLDER)
+        output_dir = default_output_dir(video_path)
 
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
