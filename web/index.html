@@ -40,6 +40,37 @@
         <span class="label">Filename prefix</span>
         <input type="text" id="prefix" value="frame" class="short">
       </label>
+
+      <p class="videoinfo" id="videoInfo" hidden></p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>How many frames</legend>
+
+      <label class="field">
+        <span class="label">Save a frame</span>
+        <select id="interval" class="select">
+          <option value="0">every frame</option>
+          <option value="0.25">every 0.25 seconds</option>
+          <option value="0.5">every 0.5 seconds</option>
+          <option value="1" selected>every second</option>
+          <option value="2">every 2 seconds</option>
+          <option value="5">every 5 seconds</option>
+          <option value="custom">every N frames…</option>
+        </select>
+        <span class="hint" id="intervalHint">A whole video at every frame is
+          thousands of images for very little extra information.</span>
+      </label>
+
+      <label class="field" id="stepField" hidden>
+        <span class="label">
+          Save one frame out of
+          <output id="stepValue" class="value">10</output>
+        </span>
+        <input type="range" id="frameStep" min="1" max="120" value="10">
+      </label>
+
+      <p class="estimate" id="estimate" hidden></p>
     </fieldset>
 
     <fieldset class="group">

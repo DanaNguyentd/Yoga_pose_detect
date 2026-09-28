@@ -391,3 +391,43 @@ figcaption {
 
 .log .err { color: var(--danger); }
 .log .ok { color: var(--ok); }
+
+/* ---------------------------------------------------- sampling and estimate */
+
+.select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-sunken);
+  color: var(--text);
+  font: inherit;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.videoinfo {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-sunken);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.estimate {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel-sunken);
+  font-size: 13px;
+}
+
+.estimate strong { font-variant-numeric: tabular-nums; }
+.estimate.heavy { border-left-color: var(--danger); }

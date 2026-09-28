@@ -15,6 +15,11 @@ const ui = {
   threshold: el("threshold"),
   samples: el("samples"),
   minArea: el("minArea"),
+  interval: el("interval"),
+  frameStep: el("frameStep"),
+  stepField: el("stepField"),
+  estimate: el("estimate"),
+  videoInfo: el("videoInfo"),
   fill: el("fill"),
   previewBtn: el("previewBtn"),
   startBtn: el("startBtn"),
@@ -31,6 +36,7 @@ const ui = {
 
 let apiReady = false;
 let running = false;
+let video = null;   // what probe() last reported about the chosen file
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -59,8 +65,60 @@ function setRunning(isRunning) {
   ui.cancelBtn.hidden = !isRunning;
 }
 
+/* "every frame" is 0 seconds, "every N frames" is the slider, anything else
+ * is a number of seconds. The analysis turns seconds into a frame step once
+ * it knows the real frame rate. */
+function sampling() {
+  const choice = ui.interval.value;
+  if (choice === "custom") return { frame_step: Number(ui.frameStep.value), interval_seconds: null };
+  if (choice === "0") return { frame_step: 1, interval_seconds: null };
+  return { frame_step: 1, interval_seconds: Number(choice) };
+}
+
+/* How many images a run would write, given what probe() told us. */
+function plannedCount() {
+  if (!video || !video.frames) return null;
+  const { frame_step, interval_seconds } = sampling();
+  let step = frame_step;
+  if (interval_seconds) {
+    if (!video.fps) return null;
+    step = Math.max(1, Math.round(video.fps * interval_seconds));
+  }
+  return { count: Math.ceil(video.frames / step), step };
+}
+
+function updateEstimate() {
+  const planned = plannedCount();
+  if (!planned) {
+    ui.estimate.hidden = true;
+    return;
+  }
+  const { count, step } = planned;
+  const every = step === 1 ? "every frame" : `one frame in every ${step}`;
+  ui.estimate.innerHTML =
+    `This will write <strong>${count.toLocaleString()}</strong> images ` +
+    `(${every} of ${video.frames.toLocaleString()}).`;
+  ui.estimate.classList.toggle("heavy", count > 2000);
+  ui.estimate.hidden = false;
+}
+
+function describeVideo() {
+  if (!video) {
+    ui.videoInfo.hidden = true;
+    return;
+  }
+  const mins = Math.floor(video.duration / 60);
+  const secs = Math.round(video.duration % 60);
+  const length = video.duration ? ` · ${mins}:${String(secs).padStart(2, "0")}` : "";
+  ui.videoInfo.textContent =
+    `${video.width}×${video.height} · ${video.fps.toFixed(1)} fps · ` +
+    `${video.frames.toLocaleString()} frames${length}`;
+  ui.videoInfo.hidden = false;
+}
+
 function settings() {
   return {
+    ...sampling(),
     video_path: ui.videoPath.value.trim(),
     output_dir: ui.outputPath.value.trim() || null,
     prefix: ui.prefix.value.trim() || "frame",
@@ -108,6 +166,17 @@ ui.fill.addEventListener("click", (event) => {
   button.classList.add("active");
 });
 
+ui.interval.addEventListener("change", () => {
+  const custom = ui.interval.value === "custom";
+  ui.stepField.hidden = !custom;
+  updateEstimate();
+});
+
+ui.frameStep.addEventListener("input", () => {
+  el("stepValue").textContent = ui.frameStep.value;
+  updateEstimate();
+});
+
 ui.removeBg.addEventListener("change", () => {
   const on = ui.removeBg.checked;
   ui.bgOptions.style.opacity = on ? "1" : ".45";
@@ -124,6 +193,12 @@ el("chooseVideo").addEventListener("click", async () => {
     ui.videoPath.value = result.path;
     log(`Video: ${result.path}`);
     setStatus("Ready");
+
+    const info = await window.pywebview.api.probe(result.path);
+    video = info.ok ? info : null;
+    describeVideo();
+    updateEstimate();
+    if (!info.ok) log(info.error, "err");
   }
 });
 

@@ -93,6 +93,35 @@ class Api:
         result = self.window.create_file_dialog(webview.FOLDER_DIALOG)
         return {"path": result[0] if result else None}
 
+    def probe(self, video_path):
+        """
+        Report a video's shape so the page can show what a run would produce.
+
+        Returns:
+            dict: {"ok": True, "fps", "frames", "duration", "width", "height"}
+                  or {"ok": False, "error": ...}
+        """
+
+        if not video_path or not os.path.exists(video_path):
+            return {"ok": False, "error": "That video file does not exist."}
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return {"ok": False, "error": "Could not open that video."}
+        try:
+            fps = float(cap.get(cv2.CAP_PROP_FPS)) or 0.0
+            frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            return {
+                "ok": True,
+                "fps": fps,
+                "frames": frames,
+                "duration": frames / fps if fps > 0 and frames > 0 else 0.0,
+                "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            }
+        finally:
+            cap.release()
+
     # ---------------------------------------------------------------- preview
 
     def preview(self, settings):
@@ -186,6 +215,8 @@ class Api:
                 bg_samples=int(settings["bg_samples"]),
                 bg_fill=settings["bg_fill"],
                 min_area_pct=float(settings["min_area_pct"]),
+                frame_step=int(settings.get("frame_step") or 1),
+                interval_seconds=settings.get("interval_seconds") or None,
                 log=self._log,
                 progress_callback=lambda done, total: self._emit("progress", done, total),
                 should_cancel=self.cancel_requested.is_set,

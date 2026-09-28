@@ -9,6 +9,7 @@ frame is compared against it and only the moving subject is kept.
 """
 
 import cv2
+import math
 import numpy as np
 import os
 from pathlib import Path
@@ -75,6 +76,46 @@ def to_grayscale(frame):
     if len(frame.shape) == 3:
         return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return frame
+
+
+def resolve_frame_step(fps, frame_step=1, interval_seconds=None, log=None):
+    """
+    Work out how many frames to advance between saved images.
+
+    Saving every frame of a long video produces tens of thousands of files for
+    very little extra information, so a frame can be taken at a time interval
+    instead.
+
+    Args:
+        fps (float): Frames per second reported by the video
+        frame_step (int): Save one frame out of this many (1 saves all)
+        interval_seconds (float): Save one frame per this many seconds. Takes
+                                  precedence over frame_step when given.
+        log (callable): Where messages go, defaults to print
+
+    Returns:
+        int: How many frames to advance between saves, never less than 1
+    """
+
+    emit = log if log is not None else print
+
+    if interval_seconds:
+        if fps and fps > 0:
+            # floor(x + 0.5) rather than round(): Python breaks ties to even
+            # while the interface's JavaScript rounds halves up, and the two
+            # must agree or the predicted image count is wrong
+            step = max(1, int(math.floor(fps * float(interval_seconds) + 0.5)))
+            emit(f"  Saving one frame every {interval_seconds}s "
+                 f"({step} frames at {fps:.2f} fps)")
+            return step
+        emit("  Warning: the video reports no frame rate, so the time interval "
+             "cannot be used. Saving every frame.")
+        return 1
+
+    step = max(1, int(frame_step or 1))
+    if step > 1:
+        emit(f"  Saving one frame out of every {step}")
+    return step
 
 
 def build_foreground_mask(gray_frame, background, threshold=25, min_area_pct=0.5):
@@ -145,6 +186,7 @@ def apply_mask(gray_frame, mask, fill="black"):
 
 def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
                    bg_threshold=25, bg_samples=60, bg_fill="black", min_area_pct=0.5,
+                   frame_step=1, interval_seconds=None,
                    log=None, progress_callback=None, should_cancel=None):
     """
     Extract all frames from a video file and save them as images.
@@ -159,6 +201,9 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         bg_samples (int): Frames sampled to build the background
         bg_fill (str): "black", "white" or "alpha" for the removed background
         min_area_pct (float): Smallest kept blob, as a percentage of frame area
+        frame_step (int): Save one frame out of this many (1 saves all)
+        interval_seconds (float): Save one frame per this many seconds,
+                                  which overrides frame_step
         log (callable): Where messages go, defaults to print
         progress_callback (callable): Called as (frames_done, frames_total)
         should_cancel (callable): Polled each frame; extraction stops when True
@@ -214,6 +259,11 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
     emit(f"  Resolution: {width}x{height}")
     emit(f"  Background removal: {'on' if remove_bg else 'off'}")
 
+    step = resolve_frame_step(fps, frame_step, interval_seconds, log=emit)
+    if step > 1 and total_frames > 0:
+        expected = (total_frames + step - 1) // step
+        emit(f"  Images to be written: {expected} of {total_frames} frames")
+
     frame_count = 0
     successful_extractions = 0
     empty_masks = 0
@@ -228,6 +278,13 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
             if should_cancel is not None and should_cancel():
                 emit(f"\nCancelled after {frame_count} frames")
                 return False
+
+            # Frames between saves cost only their decode: no mask, no file
+            if frame_count % step != 0:
+                frame_count += 1
+                if progress_callback is not None and frame_count % 5 == 0:
+                    progress_callback(frame_count, total_frames)
+                continue
 
             # Convert to grayscale if not already (for consistent handling of BW video)
             gray_frame = to_grayscale(frame)
@@ -264,7 +321,11 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
                 progress_callback(frame_count, total_frames)
 
         emit(f"\nExtraction Complete!")
-        emit(f"Total frames extracted: {successful_extractions}/{frame_count}")
+        if step > 1:
+            emit(f"Images written: {successful_extractions} "
+                 f"(from {frame_count} frames, one in every {step})")
+        else:
+            emit(f"Total frames extracted: {successful_extractions}/{frame_count}")
         if remove_bg and empty_masks:
             emit(f"Frames where nothing was detected: {empty_masks} "
                   f"(lower --bg-threshold if that seems wrong)")
@@ -303,6 +364,20 @@ def main():
         "-p", "--prefix",
         help="Prefix for output image filenames (default: 'frame')",
         default="frame"
+    )
+    sampling = parser.add_mutually_exclusive_group()
+    sampling.add_argument(
+        "--every-seconds",
+        type=float,
+        default=None,
+        help="Save one frame per this many seconds, for example 1 or 0.5, "
+             "instead of saving every frame"
+    )
+    sampling.add_argument(
+        "--every-frames",
+        type=int,
+        default=1,
+        help="Save one frame out of this many (default: 1, every frame)"
     )
     parser.add_argument(
         "--keep-background",
@@ -348,6 +423,8 @@ def main():
         bg_samples=args.bg_samples,
         bg_fill=args.bg_fill,
         min_area_pct=args.min_area,
+        frame_step=args.every_frames,
+        interval_seconds=args.every_seconds,
     )
 
     if not success:

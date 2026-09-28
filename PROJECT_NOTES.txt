@@ -159,6 +159,16 @@ Nobody imports app.py or controller.py. They are the starting points.
 
     PASS TWO - every frame in order
 
+        Not every frame has to be SAVED. resolve_frame_step() turns "every 0.5
+        seconds" into "every Nth frame" using the video's own frame rate, and
+        frames in between are decoded but otherwise skipped: no mask is built
+        and no file is written for them. A four minute clip at 30 fps is 7200
+        images if everything is kept, or 240 at one per second.
+
+        Saved files keep the SOURCE frame number, so frame_000120.png is the
+        120th frame of the video whatever the interval was. That keeps every
+        image traceable back to its moment in the footage.
+
         for each frame:
             to_grayscale()              one channel, consistently
             build_foreground_mask()     see below
@@ -193,6 +203,16 @@ Nobody imports app.py or controller.py. They are the starting points.
         One channel out, whatever came in. Shared so that the sampling pass
         and the extraction pass can never disagree.
 
+    resolve_frame_step(fps, frame_step=1, interval_seconds=None, log=None)
+        Turns a wish ("one frame per second") into a number of frames to skip,
+        using the video's frame rate. Returns at least 1. Falls back to every
+        frame, with a warning, when the file reports no frame rate.
+        It deliberately uses floor(x + 0.5) instead of round(): Python breaks
+        ties to even, JavaScript rounds halves up, and the two must agree or
+        the count the interface predicts will not match what is written. At 25
+        fps with a half second interval this is the difference between 12 and
+        13.
+
     build_foreground_mask(gray_frame, background, threshold=25,
                           min_area_pct=0.5)
         Compares one frame against the background and returns a mask: 255 on
@@ -206,10 +226,15 @@ Nobody imports app.py or controller.py. They are the starting points.
     extract_frames(video_path, output_dir=None, prefix="frame",
                    remove_bg=True, bg_threshold=25, bg_samples=60,
                    bg_fill="black", min_area_pct=0.5,
+                   frame_step=1, interval_seconds=None,
                    log=None, progress_callback=None, should_cancel=None)
         The whole job. Validates the path, makes the output folder, builds the
         background, then walks every frame and writes it out. Returns True or
         False.
+        frame_step and interval_seconds choose how many frames are kept;
+        interval_seconds wins when both are given, and the default keeps
+        every frame.
+
         The last three arguments are the only concession to having an
         interface, and all three are optional:
             log               where messages go            (default: print)
@@ -248,6 +273,12 @@ Nobody imports app.py or controller.py. They are the starting points.
 
         _busy()
             True while a worker thread is still alive.
+
+        probe(video_path) -> {"ok": True, "fps", "frames", "duration",
+                              "width", "height"}
+            Reads a video's shape without processing it. The page calls this
+            the moment a file is chosen, so it can say what the video is and
+            how many images a run would produce, before anything is written.
 
         choose_video()   -> {"path": ...}
         choose_folder()  -> {"path": ...}
@@ -295,6 +326,14 @@ Nobody imports app.py or controller.py. They are the starting points.
     setRunning(isRunning)       enables and disables buttons as a group
     settings()                  reads every control into one object, with the
                                 exact key names extract_frames expects
+    sampling()                  turns the dropdown into frame_step and
+                                interval_seconds
+    plannedCount()              how many images a run would write, from what
+                                probe() reported
+    updateEstimate()            writes that number under the controls, marked
+                                in red past 2000 images
+    describeVideo()             the size, frame rate, frame count and length
+                                line under the file picker
     requireVideo()              refuses politely when no file is chosen
     requireApi()                refuses until "pywebviewready" has fired
 
@@ -344,6 +383,11 @@ Nobody imports app.py or controller.py. They are the starting points.
         python3 extract_video_frames.py video.MOV -o frames/
         python3 extract_video_frames.py video.MOV --bg-threshold 15
         python3 extract_video_frames.py video.MOV --keep-background
+        python3 extract_video_frames.py video.MOV --every-seconds 1
+        python3 extract_video_frames.py video.MOV --every-seconds 0.5
+        python3 extract_video_frames.py video.MOV --every-frames 10
+
+        --every-seconds and --every-frames cannot be used together.
 
     Nothing needs building in order to be tested. Python is not compiled, so
     app.py reads the .py, .html and .css files straight from disk. Packaging
@@ -365,6 +409,16 @@ Nobody imports app.py or controller.py. They are the starting points.
 
 7. SETTINGS, AND WHAT TO CHANGE WHEN THE RESULT IS WRONG
 --------------------------------------------------------------------------------
+
+    How many frames (default in the interface: one per second)
+        Every frame is almost never what you want. Pose detection learns
+        nothing from two images 33 milliseconds apart, and a few minutes of
+        video becomes thousands of files.
+            fast movement, or you want dense coverage  -> 0.25 or 0.5 seconds
+            ordinary practice footage                  -> 1 second
+            long held poses                            -> 2 to 5 seconds
+        The command line still defaults to every frame, so anything that
+        already calls it keeps behaving as it did.
 
     Threshold (default 25)
         How different from the empty room a pixel must be to count as body.
@@ -396,6 +450,8 @@ Nobody imports app.py or controller.py. They are the starting points.
 
     - Pose detection. The point of the project. The frames this produces are
       its input.
+    - The tkinter interface has not been given the sampling control. It
+      still saves every frame, because the analysis defaults have not changed.
     - Automated tests. Everything so far has been checked by hand against a
       generated video with a known answer.
     - Signing. Unsigned builds warn on first launch: macOS needs right-click
