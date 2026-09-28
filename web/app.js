@@ -51,6 +51,12 @@ function log(message, kind) {
   ui.log.scrollTop = ui.log.scrollHeight;
 }
 
+/* Each run starts with an empty log, so what is on screen always describes
+ * the preview or the extraction being looked at, not the ones before it. */
+function clearLog() {
+  ui.log.textContent = "";
+}
+
 function setStatus(text) {
   ui.status.textContent = text;
 }
@@ -270,6 +276,7 @@ el("chooseOutput").addEventListener("click", async () => {
 
 ui.previewBtn.addEventListener("click", async () => {
   if (!requireApi() || !requireVideo()) return;
+  clearLog();
   setRunning(true);
   setStatus("Building the preview");
   setProgress(0, 0);
@@ -291,6 +298,7 @@ ui.previewBtn.addEventListener("click", async () => {
 
 ui.startBtn.addEventListener("click", async () => {
   if (!requireApi() || !requireVideo()) return;
+  clearLog();
   setRunning(true);
   ui.bar.className = "bar";
   setProgress(0, 0);

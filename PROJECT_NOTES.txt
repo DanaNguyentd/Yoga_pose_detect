@@ -331,6 +331,9 @@ It was deleted once the HTML one replaced it; git history still has it.
 
     el(id)                      getElementById, shortened
     log(message, kind)          appends a line to the log panel
+    clearLog()                  empties it, called when a preview or an
+                                extraction starts, so what is on screen
+                                always belongs to the run being looked at
     setStatus(text)             the line under the progress bar
     setProgress(done, total)    bar width and the "37 / 120" counter
     setRunning(isRunning)       enables and disables buttons as a group
