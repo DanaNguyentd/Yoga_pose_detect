@@ -1,0 +1,408 @@
+================================================================================
+YOGA_POSE_DETECT - PROJECT NOTES
+How the project is put together: the processing, the flow, every function,
+and what each file asks of the others.
+Last updated: 2026-09-28
+================================================================================
+
+
+1. WHAT THE PROJECT DOES
+--------------------------------------------------------------------------------
+
+Yoga videos are filmed with a fixed camera against a background that never
+changes. To train or test pose detection, those videos have to become still
+images, and the unchanging room behind the person is noise.
+
+So the project does two things:
+
+    1. Split a video into one image per frame.
+    2. Remove the static background, keeping only the moving person.
+
+The result is a folder of frames showing a body against flat black (or white,
+or transparency), ready for pose estimation.
+
+Pose detection itself is NOT built yet. This is the data preparation stage.
+
+
+2. THE FILES
+--------------------------------------------------------------------------------
+
+    extract_video_frames.py   The analysis. All image processing lives here.
+                              Imports only cv2 and numpy. Knows nothing about
+                              any interface. Also runs on its own as a
+                              command line tool.
+
+    app.py                    The bridge for the HTML interface. Imports both
+                              the analysis and pywebview. THIS IS THE APP.
+
+    web/index.html            The interface: structure.
+    web/style.css             The interface: appearance, light and dark.
+    web/app.js                The interface: behaviour, and the calls into
+                              Python.
+
+    controller.py             An older, second bridge, for the tkinter
+    ui.py                     interface. Same analysis underneath. Kept as a
+                              fallback; nothing depends on it.
+
+    build.spec                Recipe for packaging everything into a single
+                              application with Python inside it.
+    requirements.txt          What to install to run from source.
+    requirements-build.txt    The above, plus PyInstaller, to package.
+    .github/workflows/build.yml
+                              Builds the application on macOS, Linux and
+                              Windows at the same time, on GitHub's machines.
+
+
+3. HOW THE FILES CONNECT
+--------------------------------------------------------------------------------
+
+The rule the project follows: the analysis never imports an interface, and an
+interface never imports OpenCV. Only a bridge file imports both. That is why
+there can be two interfaces over one analysis, and why the analysis still runs
+on a server with no screen.
+
+    web/index.html ── loads ──> web/style.css
+           │                    web/app.js
+           │
+           │  window.pywebview.api.<method>(...)     (page asks Python)
+           │  window.appEvents.<method>(...)         (Python tells page)
+           v
+        app.py  ─────── imports ───────> extract_video_frames.py
+           │                                      ^
+           │                                      │
+    controller.py ─────── imports ────────────────┘
+           │
+           └─ imports ──> ui.py  (tkinter widgets)
+
+Nobody imports app.py or controller.py. They are the starting points.
+
+
+4. THE FLOW, STEP BY STEP
+--------------------------------------------------------------------------------
+
+4.1 STARTING UP
+
+    python3 app.py
+        -> app.main() creates an Api object
+        -> webview.create_window(...) is given web/index.html and js_api=api
+        -> webview.start() opens a window drawn by the operating system's own
+           web view: WebKit on macOS, WebKit2GTK on Linux, Edge on Windows
+        -> the page loads, and once pywebview has injected its bridge the page
+           receives the "pywebviewready" event and unlocks its buttons
+
+4.2 CHOOSING A VIDEO
+
+    user clicks "Choose..."
+        -> web/app.js calls window.pywebview.api.choose_video()
+        -> app.py Api.choose_video() opens the operating system's real file
+           dialog and returns the real path on disk
+        -> the path appears in the text field
+
+    This is the reason the project uses pywebview rather than a browser. A
+    browser can only hand over a file's CONTENTS, so a multi-gigabyte video
+    would have to be copied before anything could start.
+
+4.3 PREVIEWING ONE FRAME
+
+    user clicks "Preview a frame"
+        -> web/app.js settings() collects the whole form into one object
+        -> await window.pywebview.api.preview(settings)
+        -> app.py Api.preview():
+               _ensure_background()      rebuild the empty room (slow, cached)
+               _read_middle_frame()      grab a frame where the person is
+               analysis.to_grayscale()
+               analysis.build_foreground_mask()
+               analysis.apply_mask()
+               _side_by_side()           join the three images into one strip
+               cv2.imencode + base64     turn it into a data: URI
+        -> the URI is the resolved value of the Promise in JavaScript
+        -> <img> shows: original | rebuilt background | result
+
+    The point of the preview is judging the threshold before spending minutes
+    on a full run.
+
+4.4 EXTRACTING EVERY FRAME
+
+    user clicks "Extract all frames"
+        -> await window.pywebview.api.start(settings)
+        -> app.py Api.start() refuses if something is already running,
+           otherwise launches a WORKER THREAD and returns immediately, so the
+           window never freezes
+        -> the worker calls analysis.extract_frames(...) and hands it three
+           callbacks:
+               log=self._log                     every message
+               progress_callback=...             (frames done, frames total)
+               should_cancel=...is_set           polled once per frame
+        -> each callback runs window.evaluate_js("window.appEvents....") which
+           executes a function inside the page
+        -> the page updates its log, progress bar and status text
+        -> when the run ends: appEvents.finished("ok" | "cancelled" | "failed")
+
+    Cancelling sets a threading.Event. The analysis checks it at the top of
+    each frame and stops cleanly, which is why cancelling is quick but not
+    instant.
+
+4.5 WHAT HAPPENS INSIDE THE ANALYSIS
+
+    extract_frames() runs two passes over the video.
+
+    PASS ONE - rebuild the empty room (only if background removal is on)
+
+        compute_background() seeks to 60 positions spread across the whole
+        video, reads one frame at each, and takes the per-pixel MEDIAN.
+
+        Why the median works: at any given pixel, the person covers it in only
+        a few of the 60 samples. The median throws away those few and keeps
+        the value that appeared most consistently, which is the wall, the
+        floor, the mat. The result is a photograph of the room with the person
+        erased. No empty-room footage needed.
+
+    PASS TWO - every frame in order
+
+        for each frame:
+            to_grayscale()              one channel, consistently
+            build_foreground_mask()     see below
+            apply_mask()                keep the person, replace the rest
+            cv2.imwrite()               <prefix>_<0-padded number>.png
+
+        build_foreground_mask() in detail:
+            absdiff(frame, background)  how far each pixel moved from empty
+            GaussianBlur 5x5            calm the sensor noise
+            threshold                   fixed value, or Otsu when set to 0
+            morphology OPEN  x1         delete speckles
+            morphology CLOSE x3         fill holes inside the body
+            connectedComponents         drop blobs under min_area_pct percent
+            dilate x1                   grow slightly so limbs are not clipped
+
+        The zero-padding width comes from the total frame count, so files sort
+        correctly in any viewer.
+
+
+5. EVERY FUNCTION
+--------------------------------------------------------------------------------
+
+5.1 extract_video_frames.py    (the analysis - no interface code)
+
+    compute_background(video_path, sample_count=60, log=None)
+        Samples frames across the video and returns their per-pixel median as
+        a grayscale image: the scene with the moving subject removed. Falls
+        back to reading sequentially when the file reports no frame count.
+        Returns None if nothing could be read.
+
+    to_grayscale(frame)
+        One channel out, whatever came in. Shared so that the sampling pass
+        and the extraction pass can never disagree.
+
+    build_foreground_mask(gray_frame, background, threshold=25,
+                          min_area_pct=0.5)
+        Compares one frame against the background and returns a mask: 255 on
+        the subject, 0 elsewhere. threshold=0 chooses the cut automatically
+        per frame (Otsu).
+
+    apply_mask(gray_frame, mask, fill="black")
+        Keeps the masked pixels, replaces the rest. "black" and "white" give a
+        flat backdrop; "alpha" returns four channels for a transparent PNG.
+
+    extract_frames(video_path, output_dir=None, prefix="frame",
+                   remove_bg=True, bg_threshold=25, bg_samples=60,
+                   bg_fill="black", min_area_pct=0.5,
+                   log=None, progress_callback=None, should_cancel=None)
+        The whole job. Validates the path, makes the output folder, builds the
+        background, then walks every frame and writes it out. Returns True or
+        False.
+        The last three arguments are the only concession to having an
+        interface, and all three are optional:
+            log               where messages go            (default: print)
+            progress_callback called as (done, total)       (default: silent)
+            should_cancel     polled per frame              (default: never)
+        With all three left out the function behaves exactly as it did before
+        any interface existed, which is what the command line uses.
+
+    main()
+        Command line entry: parses arguments and calls extract_frames.
+
+5.2 app.py    (the bridge to the HTML interface)
+
+    resource_path(*parts)
+        Finds bundled files both when running from source and when running
+        inside a packaged application, where PyInstaller unpacks them into a
+        temporary folder recorded in sys._MEIPASS. Without this the packaged
+        app cannot find web/index.html.
+
+    class Api
+        Every method here is callable from JavaScript as
+        window.pywebview.api.<name>(...). Public methods are the interface's
+        vocabulary; the underscore ones are internal.
+
+        __init__()
+            Holds the window, the cancel Event, the worker thread, and the
+            cached background.
+
+        _emit(method, *args)
+            Runs window.appEvents.<method>(...) inside the page. Arguments go
+            through json.dumps, so quotes and newlines in a log line cannot
+            break the JavaScript. Safe to call from a worker thread.
+
+        _log(message, kind=None)
+            Shorthand for _emit("log", ...).
+
+        _busy()
+            True while a worker thread is still alive.
+
+        choose_video()   -> {"path": ...}
+        choose_folder()  -> {"path": ...}
+            Open the operating system's own dialogs. Return real paths.
+
+        preview(settings) -> {"ok": True, "image": "data:image/png;base64,..."}
+                          or {"ok": False, "error": "..."}
+            Renders one frame. Returns the image inline, so no temporary file
+            is written and no web server is needed.
+
+        start(settings) -> {"ok": True} or {"ok": False, "error": ...}
+            Starts the worker thread and returns at once. Refuses to overlap
+            with a run already going.
+
+        cancel()
+            Sets the cancel Event.
+
+        _extract(settings)
+            The worker body. Calls analysis.extract_frames with the three
+            callbacks, then reports the outcome through appEvents.finished.
+
+        _ensure_background(settings)
+            Returns the cached background, rebuilding it only when the video
+            path or the sample count has changed. This is what makes repeated
+            previews, while dragging the threshold slider, feel instant.
+
+        _read_middle_frame(video_path)
+            Reads from the middle of the video, where the subject is most
+            likely to be in shot.
+
+        _side_by_side(original, background, result)
+            Joins three images into one strip with white dividers, converting
+            everything to three channels so it can be encoded as one PNG.
+
+    main()
+        Creates the Api, creates the window pointed at web/index.html, and
+        starts the web view. --debug turns on the inspector.
+
+5.3 web/app.js    (the interface's behaviour)
+
+    el(id)                      getElementById, shortened
+    log(message, kind)          appends a line to the log panel
+    setStatus(text)             the line under the progress bar
+    setProgress(done, total)    bar width and the "37 / 120" counter
+    setRunning(isRunning)       enables and disables buttons as a group
+    settings()                  reads every control into one object, with the
+                                exact key names extract_frames expects
+    requireVideo()              refuses politely when no file is chosen
+    requireApi()                refuses until "pywebviewready" has fired
+
+    window.appEvents            THE INBOX. Python calls these:
+        .log(message, kind)
+        .progress(done, total)
+        .status(text)
+        .finished(outcome)      "ok" | "cancelled" | "failed"
+
+    Event listeners wire the sliders to their number labels, the segmented
+    control to its selection, and each button to its Api call.
+
+5.4 controller.py and ui.py    (the older tkinter interface)
+
+    Same shape as app.py, with one extra problem to solve: tkinter widgets may
+    only be touched from the thread that created them. So the worker posts
+    messages onto a queue.Queue, and _drain_queue() empties it every 80
+    milliseconds on the tkinter thread. The HTML version does not need this
+    because evaluate_js can be called from anywhere.
+
+    ExtractorController    run, handle_preview, handle_start, handle_cancel,
+                           _preview_worker, _extract_worker, _drain_queue,
+                           _apply, plus the same _ensure_background,
+                           _read_middle_frame and _side_by_side helpers.
+
+    ExtractorUI            builds the widgets, validates the form in
+                           get_settings(), and exposes log, set_status,
+                           set_progress, show_preview, set_running.
+
+
+6. RUNNING AND BUILDING
+--------------------------------------------------------------------------------
+
+    Install once:
+        python3 -m pip install -r requirements.txt
+
+        Use "python3 -m pip", not "pip3". On this machine pip3 belongs to
+        Python 3.9 while python3 is 3.10, so pip3 installs where python3
+        cannot see it.
+
+    Run the application (this is also how you test a change):
+        python3 app.py
+        python3 app.py --debug      adds the web inspector; Cmd+R reloads
+                                    the page after editing web/
+
+    Run the analysis alone, no window:
+        python3 extract_video_frames.py video.MOV -o frames/
+        python3 extract_video_frames.py video.MOV --bg-threshold 15
+        python3 extract_video_frames.py video.MOV --keep-background
+
+    Nothing needs building in order to be tested. Python is not compiled, so
+    app.py reads the .py, .html and .css files straight from disk. Packaging
+    only produces a file for someone who has no Python installed.
+
+    Package into a standalone application:
+        python3 -m pip install -r requirements-build.txt
+        pyinstaller --clean --noconfirm build.spec
+        -> dist/YogaPoseExtractor.app  (macOS)
+
+        macOS builds need the Command Line Tools ("xcode-select --install"),
+        because PyInstaller calls lipo.
+
+    Package for all three systems at once:
+        push to GitHub, then Actions -> Build application -> Run workflow.
+        Download the three artifacts when it finishes. PyInstaller cannot
+        cross-compile, which is why this runs on three machines.
+
+
+7. SETTINGS, AND WHAT TO CHANGE WHEN THE RESULT IS WRONG
+--------------------------------------------------------------------------------
+
+    Threshold (default 25)
+        How different from the empty room a pixel must be to count as body.
+        Body comes out patchy or hollow  -> LOWER it, try 15
+        Background bleeding through      -> RAISE it, try 35
+        Set it to 0 to let each frame choose its own (Otsu). Useful when the
+        lighting drifts during the video.
+
+    Background samples (default 60)
+        More samples make a cleaner empty room but a slower start. Raise it if
+        the person stands still for long stretches, because then the median
+        has fewer clean looks at the pixels behind them.
+
+    Replace background with (default black)
+        black / white are flat backdrops. alpha writes transparent PNGs, which
+        are larger but let you drop the body onto anything later.
+
+    Smallest blob kept (default 0.5%)
+        Anything smaller is thrown away as noise. Raise it if specks survive.
+        Lower it if a hand or foot separated from the body disappears.
+
+    The most common failure is the subject standing still for most of the
+    video. The median then contains a ghost of them, and they partly subtract
+    themselves away. More samples helps; a video where they move helps more.
+
+
+8. WHAT IS NOT DONE YET
+--------------------------------------------------------------------------------
+
+    - Pose detection. The point of the project. The frames this produces are
+      its input.
+    - Automated tests. Everything so far has been checked by hand against a
+      generated video with a known answer.
+    - Signing. Unsigned builds warn on first launch: macOS needs right-click
+      then Open, Windows needs More info then Run anyway.
+    - Linux packaging needs webkit2gtk present on the machine
+      (sudo apt install gir1.2-webkit2-4.1).
+    - controller.py and ui.py duplicate app.py's job. When the HTML interface
+      has proven itself, they can be deleted; the history keeps them.
+
+================================================================================
