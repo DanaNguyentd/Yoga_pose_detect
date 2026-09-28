@@ -134,13 +134,29 @@ function settings() {
   };
 }
 
-/* JPEG has no alpha channel, so a transparent background cannot be saved as
- * one. Python falls back to PNG in that case; the page says so in advance
- * rather than letting the choice appear to be honoured. */
+/* JPEG has no alpha channel. The page disables the transparent option while
+ * JPEG is chosen, so the combination cannot be made in the first place; this
+ * stays as a guard, and Python keeps its own fallback for the command line. */
 function effectiveFormat() {
   const chosen = ui.format.value;
   const transparent = ui.fill.querySelector(".seg.active").dataset.value === "alpha";
   return transparent && chosen === "jpg" ? "png" : chosen;
+}
+
+/* Disable the choices the chosen format cannot honour, and move off one that
+ * is already selected rather than leaving an active button disabled. */
+function syncFormatConstraints() {
+  const isJpeg = ui.format.value === "jpg";
+  const transparent = ui.fill.querySelector('[data-value="alpha"]');
+
+  transparent.disabled = isJpeg;
+  transparent.title = isJpeg ? "JPEG cannot store transparency" : "";
+
+  if (isJpeg && transparent.classList.contains("active")) {
+    transparent.classList.remove("active");
+    ui.fill.querySelector('[data-value="black"]').classList.add("active");
+    log("Transparent is not available with JPEG. Switched to black.");
+  }
 }
 
 const FORMAT_NOTES = {
@@ -197,14 +213,17 @@ ui.minArea.addEventListener("input", () => {
 
 ui.fill.addEventListener("click", (event) => {
   const button = event.target.closest(".seg");
-  if (!button) return;
+  if (!button || button.disabled) return;
   ui.fill.querySelectorAll(".seg").forEach((b) => b.classList.remove("active"));
   button.classList.add("active");
   updateExample();
 });
 
 ui.prefix.addEventListener("input", updateExample);
-ui.format.addEventListener("change", updateExample);
+ui.format.addEventListener("change", () => {
+  syncFormatConstraints();
+  updateExample();
+});
 
 ui.interval.addEventListener("change", () => {
   const custom = ui.interval.value === "custom";
@@ -311,6 +330,7 @@ window.appEvents = {
 
 window.addEventListener("pywebviewready", () => {
   apiReady = true;
+  syncFormatConstraints();
   updateExample();
   log("Ready. Choose a video, preview a frame, then extract.");
 });

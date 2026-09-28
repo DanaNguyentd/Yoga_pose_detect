@@ -346,6 +346,11 @@ It was deleted once the HTML one replaced it; git history still has it.
                                 line under the file picker
     effectiveFormat()           the chosen format, or png when the choice was
                                 jpg together with a transparent background
+    syncFormatConstraints()     disables the choices the chosen format cannot
+                                honour. Choosing JPEG greys out Transparent,
+                                and moves the selection to Black if it was
+                                already there, so a disabled button is never
+                                left active
     updateExample()             shows the name the first file will have, for
                                 example frame_000000.png, padded to the width
                                 of the video's frame count
@@ -430,9 +435,10 @@ It was deleted once the HTML one replaced it; git history still has it.
                 will be trained on.
         webp    small like jpg and still able to hold transparency. Not every
                 tool reads it.
-        Asking for jpg with a transparent background quietly becomes png,
-        because jpg has no alpha channel. The interface says so before the
-        run; the command line warns in the log.
+        Transparent is greyed out while JPEG is chosen, because jpg has no
+        alpha channel, so the combination cannot be made in the interface at
+        all. The command line can still ask for it, and there it falls back to
+        png with a warning.
 
     Threshold (default 25)
         How different from the empty room a pixel must be to count as body.

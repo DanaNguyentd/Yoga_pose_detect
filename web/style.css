@@ -463,3 +463,13 @@ figcaption {
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* A segmented choice the current file format cannot honour */
+
+.seg:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.seg:disabled:hover { background: transparent; }
