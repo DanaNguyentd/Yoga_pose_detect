@@ -101,13 +101,20 @@ It was deleted once the HTML one replaced it; git history still has it.
     The page then calls probe() and shows the video in a player, with two
     handles under it for the part to work on. Both default to the whole video.
 
-    The player is an ordinary <video> pointed at the file. That fails often
-    enough to be planned for rather than patched later: some platforms refuse
-    local files, and WebKit cannot decode every codec that ends in .MOV,
-    ProRes among them. On failure the page hides the player and scrubs through
-    frames fetched from frame_at() instead, which works for anything OpenCV
-    can open. Either way "use current" reads the position from whichever of
-    the two is showing.
+    The video cannot simply be handed to a <video> tag. The window loads its
+    own files from disk, and a web view will not let a page opened that way
+    fetch other local files, so the player stays blank however good the codec
+    is. That is what went wrong the first time this was built. MediaServer
+    answers it: a loopback web server, on a port the system picks and a path
+    that changes with every video, serving that one file with byte ranges so
+    the player can seek without fetching 400 MB first.
+
+    A codec the web view cannot decode is still possible, so the failure is
+    planned for: the page then hides the player and scrubs through frames
+    fetched from frame_at(), which works for anything OpenCV can open. Either
+    way "use current" reads the position from whichever of the two is showing,
+    and the readout underneath gives the time and, more usefully, the frame
+    number, which is the number the saved file will carry.
 
 4.3 PREVIEWING ONE FRAME
 
@@ -280,6 +287,15 @@ It was deleted once the HTML one replaced it; git history still has it.
 
 5.2 app.py    (the bridge to the HTML interface)
 
+    class MediaServer
+        A loopback web server holding one file at a time, so the page can play
+        a video it is not allowed to open directly. Listens on 127.0.0.1 only,
+        on a system-chosen port, answering on an unguessable path regenerated
+        per video. Handles Range requests, including open-ended and suffix
+        ranges, answers 416 for a range past the end and 404 for any other
+        path, and treats a dropped connection as ordinary, since a player
+        abandons requests whenever someone seeks.
+
     resource_path(*parts)
         Finds bundled files both when running from source and when running
         inside a packaged application, where PyInstaller unpacks them into a
@@ -305,6 +321,10 @@ It was deleted once the HTML one replaced it; git history still has it.
 
         _busy()
             True while a worker thread is still alive.
+
+        serve_video(video_path) -> {"ok": True, "url": "http://127.0.0.1:.../..."}
+            Publishes the video on the loopback interface and returns the URL
+            the page plays. See MediaServer.
 
         frame_at(video_path, seconds) -> {"ok": True, "image": "<data URI>"}
             One untouched frame from a moment in the video, as a JPEG data
@@ -377,6 +397,12 @@ It was deleted once the HTML one replaced it; git history still has it.
     describeVideo()             the size, frame rate, frame count and length
                                 line under the file picker
     timecode(seconds)           seconds as m:ss
+    timecodeExact(seconds)      seconds as m:ss.s, for the position readout
+    frameAt(seconds)            which frame a moment falls on, floor(s * fps),
+                                the same number the analysis names the file
+                                after
+    showPosition(seconds)       the line under the player: the time, and the
+                                frame number, from the playhead or scrubber
     loadVideo(path)             points the player at the file, as a file: URL
     useScrubber()               swaps the player for the frame scrubber when
                                 the video will not play
