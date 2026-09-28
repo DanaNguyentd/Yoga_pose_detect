@@ -1,8 +1,10 @@
-# Runtime dependencies. Install with: pip install -r requirements.txt
+# Runtime dependencies. Install with:
+#   python3 -m pip install -r requirements.txt
+#
+# Use "python3 -m pip", not "pip3": on some machines pip3 belongs to a
+# different Python than python3, and the packages land where python3
+# cannot see them.
+
 opencv-python>=4.8
 numpy>=1.24
 pywebview>=5.0
-
-# The tkinter interface (ui.py / controller.py) additionally uses Pillow.
-# tkinter itself ships with Python.
-Pillow>=9.0

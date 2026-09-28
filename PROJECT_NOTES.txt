@@ -40,10 +40,6 @@ Pose detection itself is NOT built yet. This is the data preparation stage.
     web/app.js                The interface: behaviour, and the calls into
                               Python.
 
-    controller.py             An older, second bridge, for the tkinter
-    ui.py                     interface. Same analysis underneath. Kept as a
-                              fallback; nothing depends on it.
-
     build.spec                Recipe for packaging everything into a single
                               application with Python inside it.
     requirements.txt          What to install to run from source.
@@ -62,19 +58,19 @@ there can be two interfaces over one analysis, and why the analysis still runs
 on a server with no screen.
 
     web/index.html ── loads ──> web/style.css
-           │                    web/app.js
+                               web/app.js
            │
            │  window.pywebview.api.<method>(...)     (page asks Python)
            │  window.appEvents.<method>(...)         (Python tells page)
            v
         app.py  ─────── imports ───────> extract_video_frames.py
-           │                                      ^
-           │                                      │
-    controller.py ─────── imports ────────────────┘
-           │
-           └─ imports ──> ui.py  (tkinter widgets)
 
-Nobody imports app.py or controller.py. They are the starting points.
+Nobody imports app.py. It is the starting point. Nothing imports the
+interface, and the analysis imports nothing but cv2 and numpy, so it still
+runs on a machine with no screen.
+
+There was a second interface built with tkinter (controller.py and ui.py).
+It was deleted once the HTML one replaced it; git history still has it.
 
 
 4. THE FLOW, STEP BY STEP
@@ -346,24 +342,6 @@ Nobody imports app.py or controller.py. They are the starting points.
     Event listeners wire the sliders to their number labels, the segmented
     control to its selection, and each button to its Api call.
 
-5.4 controller.py and ui.py    (the older tkinter interface)
-
-    Same shape as app.py, with one extra problem to solve: tkinter widgets may
-    only be touched from the thread that created them. So the worker posts
-    messages onto a queue.Queue, and _drain_queue() empties it every 80
-    milliseconds on the tkinter thread. The HTML version does not need this
-    because evaluate_js can be called from anywhere.
-
-    ExtractorController    run, handle_preview, handle_start, handle_cancel,
-                           _preview_worker, _extract_worker, _drain_queue,
-                           _apply, plus the same _ensure_background,
-                           _read_middle_frame and _side_by_side helpers.
-
-    ExtractorUI            builds the widgets, validates the form in
-                           get_settings(), and exposes log, set_status,
-                           set_progress, show_preview, set_running.
-
-
 6. RUNNING AND BUILDING
 --------------------------------------------------------------------------------
 
@@ -450,15 +428,11 @@ Nobody imports app.py or controller.py. They are the starting points.
 
     - Pose detection. The point of the project. The frames this produces are
       its input.
-    - The tkinter interface has not been given the sampling control. It
-      still saves every frame, because the analysis defaults have not changed.
     - Automated tests. Everything so far has been checked by hand against a
       generated video with a known answer.
     - Signing. Unsigned builds warn on first launch: macOS needs right-click
       then Open, Windows needs More info then Run anyway.
     - Linux packaging needs webkit2gtk present on the machine
       (sudo apt install gir1.2-webkit2-4.1).
-    - controller.py and ui.py duplicate app.py's job. When the HTML interface
-      has proven itself, they can be deleted; the history keeps them.
 
 ================================================================================
