@@ -1,0 +1,11 @@
+{
+  "name": "yoga-pose-detect-ui-tests",
+  "private": true,
+  "description": "Development dependency for the interface tests. The application itself needs no Node.",
+  "scripts": {
+    "test": "sh tests/run_ui_tests.sh"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

@@ -227,3 +227,7 @@ __marimo__/
 # Extracted frames: output, not source
 frame_result*/
 *_frames_*/
+
+# Node, used only by the interface tests
+node_modules/
+package-lock.json
