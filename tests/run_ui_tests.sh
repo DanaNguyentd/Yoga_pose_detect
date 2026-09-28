@@ -14,10 +14,11 @@ if ! node -e "require('jsdom')" 2>/dev/null; then
 fi
 
 failed=0
-for suite in tests/test_ui.js tests/test_log.js tests/test_range.js tests/test_position.js; do
+for suite in tests/test_ui.js tests/test_log.js tests/test_range.js \
+             tests/test_position.js tests/test_sync.js; do
   printf '%-24s' "$(basename "$suite")"
   if node "$suite" > /tmp/ui_test_out 2>&1; then
-    echo "$(tail -1 /tmp/ui_test_out)"
+    tail -1 /tmp/ui_test_out
   else
     echo "FAILED"
     cat /tmp/ui_test_out

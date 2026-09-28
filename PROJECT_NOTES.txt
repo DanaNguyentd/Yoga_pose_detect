@@ -434,9 +434,18 @@ It was deleted once the HTML one replaced it; git history still has it.
     chosenRange()               start_seconds and end_seconds, each null when
                                 that end has not been moved, which is what the
                                 analysis reads as "the whole video"
-    resetRange()                both handles back to the full span
+    resetRange()                both handles back to the full span, with
+                                step="any" on each: a stepped range input
+                                snaps to its own grid, so a handle could not
+                                land on the moment the video was paused at,
+                                and the grid stopped short of the end unless
+                                the length was a multiple of the step
     updateRange()               keeps the two handles from crossing, writes
-                                the timecodes and the summary, re-estimates
+                                the timecodes in tenths so they agree with the
+                                readout under the player, and re-estimates.
+                                Whole-video is judged within NEARLY rather
+                                than exactly, since a range input carries
+                                floating point noise
     playhead()                  the current position, from the player or the
                                 scrubber, whichever is showing
     effectiveFormat()           the chosen format, or png when the choice was

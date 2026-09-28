@@ -51,6 +51,11 @@ const ui = {
   positionInfo: el("positionInfo"),
 };
 
+/* How close two positions have to be to count as the same one. A range input
+ * carries a little floating point noise, and the two handles need somewhere to
+ * stand without landing on each other. */
+const NEARLY = 0.05;
+
 let apiReady = false;
 let running = false;
 let video = null;     // what probe() last reported about the chosen file
@@ -337,8 +342,8 @@ function chosenRange() {
   const start = Number(ui.startTime.value);
   const end = Number(ui.endTime.value);
   return {
-    start_seconds: start > 0 ? start : null,
-    end_seconds: end < total ? end : null,
+    start_seconds: start > NEARLY ? start : null,
+    end_seconds: end < total - NEARLY ? end : null,
   };
 }
 
@@ -347,7 +352,11 @@ function resetRange() {
   for (const slider of [ui.startTime, ui.endTime]) {
     slider.min = 0;
     slider.max = total || 100;
-    slider.step = total > 120 ? 0.5 : 0.1;
+    // "any" rather than a fixed step: a stepped slider snaps to its own grid,
+    // so a handle could not sit on the moment the video is paused at, and the
+    // grid would not reach the end of the video unless the length happened to
+    // be a multiple of the step
+    slider.step = "any";
   }
   ui.startTime.value = 0;
   ui.endTime.value = total || 100;
@@ -360,18 +369,20 @@ function updateRange() {
   // The two handles must not cross: whichever moved gives way to the other
   if (Number(ui.startTime.value) >= Number(ui.endTime.value)) {
     if (document.activeElement === ui.startTime) {
-      ui.startTime.value = Math.max(0, Number(ui.endTime.value) - Number(ui.startTime.step));
+      ui.startTime.value = Math.max(0, Number(ui.endTime.value) - NEARLY);
     } else {
-      ui.endTime.value = Math.min(total, Number(ui.startTime.value) + Number(ui.endTime.step));
+      ui.endTime.value = Math.min(total, Number(ui.startTime.value) + NEARLY);
     }
   }
 
   const start = Number(ui.startTime.value);
   const end = Number(ui.endTime.value);
-  ui.startLabel.textContent = timecode(start);
-  ui.endLabel.textContent = timecode(end);
 
-  const whole = start <= 0 && end >= total;
+  // Tenths, like the readout under the player, so the two agree on screen
+  ui.startLabel.textContent = timecodeExact(start);
+  ui.endLabel.textContent = timecodeExact(end);
+
+  const whole = start <= NEARLY && end >= total - NEARLY;
   const first = frameAt(start);
   const last = frameAt(end);
   ui.rangeSummary.textContent = whole
@@ -490,6 +501,7 @@ el("chooseVideo").addEventListener("click", async () => {
 
     if (video) {
       ui.scrub.max = video.duration || 100;
+      ui.scrub.step = "any";
       ui.scrub.value = 0;
       ui.rangebar.hidden = false;
       resetRange();

@@ -46,8 +46,8 @@ const check = (label, got, want) => {
 
   console.log("A 4 minute video is chosen:");
   check("range bar shown", $("rangebar").hidden, false);
-  check("start at 0:00", $("startLabel").textContent, "0:00");
-  check("end at 4:00", $("endLabel").textContent, "4:00");
+  check("start at 0:00", $("startLabel").textContent, "0:00.0");
+  check("end at 4:00", $("endLabel").textContent, "4:00.0");
   check("summary says whole video", $("rangeSummary").textContent, "The whole video.");
   check("player got the served URL", $("video").src, "http://127.0.0.1:9/abc");
   check("estimate is the whole video", /240 images/.test($("estimate").textContent), true);
@@ -55,8 +55,8 @@ const check = (label, got, want) => {
   console.log("\nTrimming to 1:00 - 2:00:");
   input($("startTime"), 60);
   input($("endTime"), 120);
-  check("start label", $("startLabel").textContent, "1:00");
-  check("end label", $("endLabel").textContent, "2:00");
+  check("start label", $("startLabel").textContent, "1:00.0");
+  check("end label", $("endLabel").textContent, "2:00.0");
   check("summary", $("rangeSummary").textContent, "1:00 of footage, frame 1,800 to 3,600.");
   check("estimate follows the range", /60 images/.test($("estimate").textContent), true);
 
@@ -90,7 +90,7 @@ const check = (label, got, want) => {
   input($("scrub"), 90);
   await wait();
   click($("startHere"));
-  check("start moved to 1:30", $("startLabel").textContent, "1:30");
+  check("start moved to 1:30", $("startLabel").textContent, "1:30.0");
 
   console.log("\nWhat gets sent to Python:");
   input($("startTime"), 30);

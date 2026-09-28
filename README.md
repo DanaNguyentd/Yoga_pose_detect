@@ -159,7 +159,8 @@ sh tests/run_ui_tests.sh
 They check that choosing JPEG greys out transparency and moves the selection
 off it, that the example filename matches what Python will really write, that
 the log clears when a run starts, that the range handles cannot cross, that an
-unplayable video falls back to the frame scrubber, and that the image count the
+unplayable video falls back to the frame scrubber, that the player's clock and
+the range handles agree to a tenth of a second, and that the image count the
 page predicts agrees with the number of files that appear.
 
 ---
