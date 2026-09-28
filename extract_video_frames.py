@@ -297,7 +297,7 @@ def apply_mask(gray_frame, mask, fill="black"):
 def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
                    bg_threshold=25, bg_samples=60, bg_fill="black", min_area_pct=0.5,
                    frame_step=1, interval_seconds=None, image_format="png",
-                   start_seconds=None, end_seconds=None,
+                   start_seconds=None, end_seconds=None, save_background=False,
                    log=None, progress_callback=None, should_cancel=None):
     """
     Extract all frames from a video file and save them as images.
@@ -319,6 +319,8 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         image_format (str): "png", "jpg" or "webp" (default: "png")
         start_seconds (float): Where in the video to begin, None for the start
         end_seconds (float): Where to stop, None for the end
+        save_background (bool): Also write the reconstructed empty scene, as
+                                background.<ext> in the output folder
         log (callable): Where messages go, defaults to print
         progress_callback (callable): Called as (frames_done, frames_total)
         should_cancel (callable): Polled each frame; extraction stops when True
@@ -382,6 +384,15 @@ def extract_frames(video_path, output_dir=None, prefix="frame", remove_bg=True,
         fps, total_frames, start_seconds, end_seconds, log=emit
     )
     frames_in_range = max(0, end_frame - start_frame)
+
+    # The reconstructed scene is worth keeping when the masking looks wrong:
+    # a background with a ghost of the subject in it explains most bad results
+    if save_background and background is not None:
+        background_path = os.path.join(output_dir, f"background{extension}")
+        if cv2.imwrite(background_path, background, encoder_params):
+            emit(f"  Background saved: {os.path.basename(background_path)}")
+        else:
+            emit("  Warning: could not save the background image")
 
     step = resolve_frame_step(fps, frame_step, interval_seconds, log=emit)
     if frames_in_range > 0:
@@ -533,6 +544,12 @@ def main():
              "lossy and cannot hold transparency; webp is small and can"
     )
     parser.add_argument(
+        "--save-background",
+        action="store_true",
+        help="Also write the reconstructed empty scene as background.<ext>, "
+             "which shows what the frames were compared against"
+    )
+    parser.add_argument(
         "--keep-background",
         action="store_true",
         help="Save whole frames without removing the background"
@@ -581,6 +598,7 @@ def main():
         image_format=args.format,
         start_seconds=args.start,
         end_seconds=args.end,
+        save_background=args.save_background,
     )
 
     if not success:

@@ -18,6 +18,7 @@ const ui = {
   format: el("format"),
   example: el("example"),
   formatHint: el("formatHint"),
+  saveBackground: el("saveBackground"),
   interval: el("interval"),
   frameStep: el("frameStep"),
   stepField: el("stepField"),
@@ -71,8 +72,11 @@ function clearLog() {
   ui.log.textContent = "";
 }
 
-function setStatus(text) {
+/* The status line carries its state in colour: red while something is
+ * running, green once it has finished. */
+function setStatus(text, state = "") {
   ui.status.textContent = text;
+  ui.status.className = state ? `status-${state}` : "";
 }
 
 function setProgress(done, total) {
@@ -161,6 +165,7 @@ function settings() {
     bg_samples: Number(ui.samples.value),
     bg_fill: ui.fill.querySelector(".seg.active").dataset.value,
     min_area_pct: Number(ui.minArea.value),
+    save_background: ui.saveBackground.checked,
   };
 }
 
@@ -215,7 +220,7 @@ function updateExample() {
 function requireVideo() {
   if (ui.videoPath.value.trim()) return true;
   log("Choose a video file first.", "err");
-  setStatus("No video chosen");
+  setStatus("No video chosen", "failed");
   return false;
 }
 
@@ -507,7 +512,7 @@ ui.previewBtn.addEventListener("click", async () => {
   if (!requireApi() || !requireVideo()) return;
   clearLog();
   setRunning(true);
-  setStatus("Building the preview");
+  setStatus("Building the preview", "running");
   setProgress(0, 0);
   try {
     const result = await window.pywebview.api.preview(settings());
@@ -515,10 +520,10 @@ ui.previewBtn.addEventListener("click", async () => {
       ui.previewImage.src = result.image;
       ui.previewFigure.hidden = false;
       ui.placeholder.hidden = true;
-      setStatus("Preview ready");
+      setStatus("Preview ready", "done");
     } else {
       log(result.error, "err");
-      setStatus("Preview failed");
+      setStatus("Preview failed", "failed");
     }
   } finally {
     setRunning(false);
@@ -531,11 +536,11 @@ ui.startBtn.addEventListener("click", async () => {
   setRunning(true);
   ui.bar.className = "bar";
   setProgress(0, 0);
-  setStatus("Extracting");
+  setStatus("Extracting", "running");
   const result = await window.pywebview.api.start(settings());
   if (!result.ok) {
     log(result.error, "err");
-    setStatus("Could not start");
+    setStatus("Could not start", "failed");
     setRunning(false);
   }
 });
@@ -543,7 +548,7 @@ ui.startBtn.addEventListener("click", async () => {
 ui.cancelBtn.addEventListener("click", () => {
   if (!requireApi()) return;
   window.pywebview.api.cancel();
-  setStatus("Cancelling…");
+  setStatus("Cancelling…", "running");
 });
 
 /* ------------------------------------------------- events pushed by Python */
@@ -555,8 +560,8 @@ window.appEvents = {
   progress(done, total) {
     setProgress(done, total);
   },
-  status(text) {
-    setStatus(text);
+  status(text, state) {
+    setStatus(text, state || "");
   },
   finished(outcome) {
     setRunning(false);

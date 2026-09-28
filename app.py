@@ -392,24 +392,25 @@ class Api:
                 image_format=settings.get("image_format") or "png",
                 start_seconds=settings.get("start_seconds"),
                 end_seconds=settings.get("end_seconds"),
+                save_background=bool(settings.get("save_background")),
                 log=self._log,
                 progress_callback=lambda done, total: self._emit("progress", done, total),
                 should_cancel=self.cancel_requested.is_set,
             )
 
             if self.cancel_requested.is_set():
-                self._emit("status", "Cancelled")
+                self._emit("status", "Cancelled", "")
                 self._emit("finished", "cancelled")
             elif succeeded:
-                self._emit("status", "Finished")
+                self._emit("status", "Finished", "done")
                 self._emit("finished", "ok")
             else:
-                self._emit("status", "Failed, see the log")
+                self._emit("status", "Failed, see the log", "failed")
                 self._emit("finished", "failed")
 
         except Exception as error:
             self._log(f"Extraction failed: {error}", "err")
-            self._emit("status", "Failed")
+            self._emit("status", "Failed", "failed")
             self._emit("finished", "failed")
 
     # ----------------------------------------------------------- frame tools

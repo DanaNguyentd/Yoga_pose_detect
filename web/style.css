@@ -581,3 +581,17 @@ figcaption {
   color: var(--text);
   font-weight: 600;
 }
+
+/* --------------------------------------------------------------- status line */
+
+#status {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  transition: color .15s ease;
+}
+
+/* Running and finished are the two states worth seeing from across a desk */
+#status.status-running { color: var(--danger); }
+#status.status-done { color: var(--ok); }
+#status.status-failed { color: var(--danger); }

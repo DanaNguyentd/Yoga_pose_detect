@@ -277,11 +277,15 @@ It was deleted once the HTML one replaced it; git history still has it.
                    remove_bg=True, bg_threshold=25, bg_samples=60,
                    bg_fill="black", min_area_pct=0.5,
                    frame_step=1, interval_seconds=None, image_format="png",
-                   start_seconds=None, end_seconds=None,
+                   start_seconds=None, end_seconds=None, save_background=False,
                    log=None, progress_callback=None, should_cancel=None)
         The whole job. Validates the path, makes the output folder, builds the
         background, then walks every frame and writes it out. Returns True or
         False.
+        save_background also writes the rebuilt empty scene, as
+        background.<ext> beside the frames. Nothing is written when background
+        removal is off, because then no background was ever built.
+
         frame_step and interval_seconds choose how many frames are kept;
         interval_seconds wins when both are given, and the default keeps
         every frame.
@@ -395,7 +399,11 @@ It was deleted once the HTML one replaced it; git history still has it.
     clearLog()                  empties it, called when a preview or an
                                 extraction starts, so what is on screen
                                 always belongs to the run being looked at
-    setStatus(text)             the line under the progress bar
+    setStatus(text, state)      the line under the progress bar. state is
+                                "running", "done" or "failed", and colours it:
+                                red while working, green when finished. Python
+                                sends the state with the text, so a run that
+                                ends on the worker thread colours it correctly
     setProgress(done, total)    bar width and the "37 / 120" counter
     setRunning(isRunning)       enables and disables buttons as a group
     settings()                  reads every control into one object, with the
@@ -516,6 +524,13 @@ It was deleted once the HTML one replaced it; git history still has it.
             long held poses                            -> 2 to 5 seconds
         The command line still defaults to every frame, so anything that
         already calls it keeps behaving as it did.
+
+    Also save the rebuilt background (default off)
+        Writes background.<ext> beside the frames: the empty scene every frame
+        was compared against. Worth turning on the first time a video gives
+        poor masks, because the usual cause is visible in it. A background
+        with a ghost of the subject in it means they held still for too much
+        of the video for the median to erase them.
 
     Image format (default png)
         png     lossless, keeps transparency, biggest files. The safe choice
